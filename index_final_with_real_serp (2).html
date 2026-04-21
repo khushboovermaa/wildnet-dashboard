@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wildnet GSC Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap');
+  :root{--bg:#0a0b0f;--surface:#12141a;--surface2:#1a1d26;--border:#252836;--text:#e8eaf0;--muted:#5a5f72;--accent:#4f8eff;--green:#22c55e;--green-bg:#052a13;--red:#f43f5e;--red-bg:#2a0510;--orange:#f97316;--yellow:#f59e0b;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+  #loginScreen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:32px;background:radial-gradient(ellipse at 50% 0%,#1a2340 0%,var(--bg) 70%);}
+  .logo-mark{width:72px;height:72px;background:linear-gradient(135deg,var(--accent),#a78bfa);border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 0 60px rgba(79,142,255,0.3);}
+  .login-title{font-size:32px;font-weight:800;text-align:center;line-height:1.2;}
+  .login-title span{color:var(--accent);}
+  .login-sub{font-size:14px;color:var(--muted);text-align:center;max-width:360px;line-height:1.6;}
+  .login-btn{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px 36px;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:all 0.2s;box-shadow:0 4px 24px rgba(79,142,255,0.35);}
+  .login-btn:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(79,142,255,0.5);}
+  .login-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+  .login-note{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+  #app{display:none;}
+  .topbar{position:sticky;top:0;z-index:100;background:rgba(10,11,15,0.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;gap:16px;}
+  .topbar-brand{font-size:15px;font-weight:800;color:var(--accent);letter-spacing:-0.3px;white-space:nowrap;}
+  .topbar-site{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);background:var(--surface2);padding:4px 10px;border-radius:6px;border:1px solid var(--border);}
+  .topbar-right{margin-left:auto;display:flex;align-items:center;gap:12px;}
+  .week-badge{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);}
+  .alert-badge{background:var(--red);color:#fff;border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;display:none;animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(244,63,94,0.4);}50%{box-shadow:0 0 0 8px rgba(244,63,94,0);}}
+  .refresh-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 14px;font-family:'Syne',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;}
+  .refresh-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .logout-btn{background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:'Syne',sans-serif;padding:4px 8px;border-radius:6px;}
+  .logout-btn:hover{color:var(--red);}
+  .loading-bar{position:fixed;top:56px;left:0;right:0;height:2px;background:var(--border);z-index:99;}
+  .loading-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),#a78bfa);width:0%;transition:width 0.4s ease;}
+  .loading-status{position:fixed;top:66px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 18px;font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;z-index:98;white-space:nowrap;display:none;}
+  .branded-panel{margin:12px 24px 4px;background:var(--surface);border:1px solid #3b2d6b;border-radius:12px;padding:14px 20px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;}
+  .branded-panel-title{font-size:11px;font-weight:700;color:#a78bfa;letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;}
+  .branded-stats{display:flex;gap:20px;flex-wrap:wrap;}
+  .branded-stat{display:flex;flex-direction:column;gap:2px;}
+  .branded-stat-label{font-size:9px;color:var(--muted);font-family:'JetBrains Mono',monospace;letter-spacing:0.5px;text-transform:uppercase;}
+  .branded-stat-val{font-size:15px;font-weight:700;color:#a78bfa;font-family:'JetBrains Mono',monospace;}
+  .branded-stat-wow{font-size:10px;font-family:'JetBrains Mono',monospace;}
+  .branded-stat-wow.up{color:var(--green);}.branded-stat-wow.down{color:var(--red);}.branded-stat-wow.flat{color:var(--muted);}
+  .branded-weeks{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;}
+  .branded-week-chip{background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);border-radius:6px;padding:4px 10px;font-size:10px;font-family:'JetBrains Mono',monospace;color:#a78bfa;white-space:nowrap;}
+  .branded-week-chip span{color:var(--muted);}
+  .seg-tabs{display:flex;gap:0;padding:16px 24px 0;overflow-x:auto;border-bottom:1px solid var(--border);scrollbar-width:none;}
+  .seg-tabs::-webkit-scrollbar{display:none;}
+  .seg-tab{padding:10px 18px;font-size:12px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;color:var(--muted);transition:all 0.15s;background:none;border-top:none;border-left:none;border-right:none;font-family:'Syne',sans-serif;}
+  .seg-tab:hover{color:var(--text);}
+  .seg-tab.active{color:var(--text);border-bottom-color:currentColor;}
+  .action-tab-btn{color:var(--red)!important;}
+  .action-tab-btn.active{border-bottom-color:var(--red)!important;}
+  .summary-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px;padding:16px 24px 8px;}
+  .summary-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;transition:all 0.15s;}
+  .summary-card:hover{transform:translateY(-1px);}
+  .card-label{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:0.5px;text-transform:uppercase;}
+  .card-clicks{font-size:22px;font-weight:800;font-family:'JetBrains Mono',monospace;margin:4px 0 2px;}
+  .card-wow{font-size:11px;font-weight:600;font-family:'JetBrains Mono',monospace;}
+  .card-wow.up{color:var(--green);}.card-wow.down{color:var(--red);}.card-wow.flat{color:var(--muted);}
+  .table-wrap{padding:0 24px 80px;overflow-x:auto;}
+  .table-header-row{display:flex;align-items:center;gap:12px;padding:16px 0 12px;flex-wrap:wrap;}
+  .seg-title{font-size:16px;font-weight:800;}
+  .page-count{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;background:var(--surface2);padding:3px 8px;border-radius:4px;}
+  .email-btn{background:linear-gradient(135deg,#f97316,#ef4444);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .search-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;width:220px;outline:none;margin-left:auto;}
+  .search-box:focus{border-color:var(--accent);}
+  table{width:100%;border-collapse:separate;border-spacing:0;min-width:900px;}
+  thead th{background:var(--surface);border-bottom:1px solid var(--border);padding:0;position:sticky;top:56px;z-index:10;}
+  .th-week-group{padding:8px 12px 4px;font-size:10px;font-weight:700;color:var(--muted);font-family:'JetBrains Mono',monospace;text-align:center;border-right:1px solid var(--border);letter-spacing:0.3px;}
+  .th-sub{padding:4px 10px 8px;font-size:9px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;text-align:right;border-right:1px solid var(--border);color:var(--muted);}
+  .th-sub.clicks{color:var(--accent);}.th-sub.impr{color:#a78bfa;}
+  tr.data-row{transition:background 0.1s;}
+  tr.data-row:hover td{background:var(--surface2)!important;}
+  tr.data-row.done-row td{opacity:0.4;text-decoration:line-through;}
+  td{padding:7px 10px;font-size:12px;border-bottom:1px solid rgba(37,40,54,0.5);vertical-align:middle;font-family:'JetBrains Mono',monospace;text-align:right;white-space:nowrap;background:var(--bg);}
+  td.url-cell{text-align:left;font-size:11px;color:var(--accent);max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg);position:sticky;left:0;border-right:1px solid var(--border);}
+  td.up{color:var(--green)!important;background:var(--green-bg)!important;font-weight:700;}
+  td.down{color:var(--red)!important;background:var(--red-bg)!important;font-weight:700;}
+  td.neutral{color:var(--muted);}
+  td.impr-cell{color:#a78bfa;opacity:0.8;}
+  td.week-border{border-right:1px solid var(--border);}
+  td.branded-cell{color:#a78bfa;font-size:11px;border-right:2px solid #3b2d6b;border-left:2px solid #3b2d6b;background:rgba(167,139,250,0.04)!important;text-align:center;}
+  th.th-branded{background:rgba(167,139,250,0.08)!important;color:#a78bfa!important;border-left:2px solid #3b2d6b;border-right:2px solid #3b2d6b;}
+  #actionView{display:none;padding:0 24px 80px;}
+  .action-header{padding:20px 0 12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+  .action-title{font-size:20px;font-weight:800;color:var(--red);}
+  .action-subtitle{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+  .action-count-badge{background:var(--red);color:#fff;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;}
+  .action-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+  .action-toolbar-btn{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;padding:7px 16px;font-family:'Syne',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;}
+  .action-toolbar-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .action-toolbar-btn.danger{border-color:var(--red);color:var(--red);}
+  .action-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:10px;padding:16px 18px;margin-bottom:10px;transition:all 0.2s;}
+  .action-card.done{border-left-color:var(--green);opacity:0.5;}
+  .action-card-top{display:flex;align-items:flex-start;gap:12px;}
+  .action-checkbox{width:22px;height:22px;border:2px solid var(--border);border-radius:5px;cursor:pointer;flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all 0.15s;}
+  .action-checkbox.checked{background:var(--green);border-color:var(--green);color:#fff;}
+  .action-card-body{flex:1;min-width:0;}
+  .action-url{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px;}
+  .action-meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
+  .action-drop{background:var(--red-bg);color:var(--red);border:1px solid rgba(244,63,94,0.3);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace;}
+  .action-seg{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;background:var(--surface2);padding:3px 8px;border-radius:4px;}
+  .action-clicks{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+  .action-links{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+  .action-link-btn{font-size:11px;font-weight:600;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-family:'Syne',sans-serif;text-decoration:none;display:inline-flex;align-items:center;gap:4px;}
+  .action-link-btn.view{background:rgba(79,142,255,0.12);color:var(--accent);}
+  .action-link-btn.edit{background:rgba(249,115,22,0.12);color:var(--orange);}
+  .action-link-btn.gsc{background:rgba(34,197,94,0.12);color:var(--green);}
+  .action-link-btn:hover{opacity:0.8;}
+  .action-note{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:'Syne',sans-serif;font-size:12px;resize:vertical;min-height:52px;outline:none;}
+  .action-note:focus{border-color:var(--accent);}
+  .action-note-saved{font-size:10px;color:var(--green);font-family:'JetBrains Mono',monospace;margin-top:3px;display:none;}
+
+  /* AI Analysis */
+  .ai-section{margin-top:12px;border-top:1px solid var(--border);padding-top:12px;}
+  .ai-analyze-btn{background:linear-gradient(135deg,#4f8eff,#a78bfa);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;}
+  .ai-analyze-btn:hover{opacity:0.9;transform:translateY(-1px);}
+  .ai-analyze-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+  .ai-loading{display:none;align-items:center;gap:8px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:8px;}
+  .ai-loading-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:dotpulse 1.4s ease-in-out infinite;}
+  .ai-loading-dot:nth-child(2){animation-delay:0.2s;}
+  .ai-loading-dot:nth-child(3){animation-delay:0.4s;}
+  @keyframes dotpulse{0%,80%,100%{transform:scale(0.6);opacity:0.4;}40%{transform:scale(1);opacity:1;}}
+
+  .competitors-wrap{margin-top:10px;display:none;}
+  .competitors-title{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;}
+  .competitor-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;}
+  .competitor-rank{font-size:9px;font-weight:700;color:var(--accent);font-family:'JetBrains Mono',monospace;margin-bottom:3px;}
+  .competitor-title{font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px;}
+  .competitor-url{font-size:10px;color:var(--green);font-family:'JetBrains Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  .ai-notes-wrap{margin-top:12px;display:none;}
+  .ai-notes-title{font-size:10px;font-weight:700;color:#a78bfa;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+  .ai-notes-title::before{content:'✦';font-size:12px;}
+  .ai-note-point{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid rgba(37,40,54,0.5);font-size:12px;line-height:1.5;}
+  .ai-note-point:last-child{border-bottom:none;}
+  .ai-note-icon{font-size:14px;flex-shrink:0;margin-top:1px;}
+  .ai-note-text{color:var(--text);}
+  .ai-note-text strong{color:#a78bfa;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;display:none;align-items:center;justify-content:center;}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;}
+  .modal-title{font-size:18px;font-weight:800;margin-bottom:6px;}
+  .modal-sub{font-size:12px;color:var(--muted);margin-bottom:20px;font-family:'JetBrains Mono',monospace;}
+  .modal-field{margin-bottom:14px;}
+  .modal-label{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px;display:block;}
+  .modal-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;outline:none;}
+  .modal-input:focus{border-color:var(--accent);}
+  .modal-preview{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:pre-wrap;max-height:200px;overflow-y:auto;line-height:1.6;margin-bottom:16px;}
+  .modal-btns{display:flex;gap:10px;justify-content:flex-end;}
+  .modal-btn{border:none;border-radius:8px;padding:9px 20px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;}
+  .modal-btn.primary{background:var(--accent);color:#fff;}
+  .modal-btn.cancel{background:var(--surface2);color:var(--muted);}
+  .empty-state{text-align:center;padding:60px 24px;color:var(--muted);font-size:14px;}
+  .empty-state span{display:block;font-size:32px;margin-bottom:12px;}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px 20px;font-size:12px;font-family:'JetBrains Mono',monospace;z-index:999;display:none;}
+  .toast.error{background:var(--red-bg);border-color:var(--red);color:var(--red);}
+  ::-webkit-scrollbar{width:6px;height:6px;}::-webkit-scrollbar-track{background:var(--bg);}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+  .settings-btn{background:none;border:1px solid var(--border);color:var(--muted);font-size:12px;cursor:pointer;font-family:'Syne',sans-serif;padding:5px 12px;border-radius:6px;transition:all 0.15s;}
+  .settings-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .api-key-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;outline:none;}
+  .api-key-input:focus{border-color:var(--accent);}
+  .api-status{font-size:11px;font-family:'JetBrains Mono',monospace;margin-top:6px;}
+  .api-status.ok{color:var(--green);}.api-status.warn{color:var(--yellow);}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="logo-mark">📊</div>
+  <div><div class="login-title">Wildnet <span>GSC</span><br>Dashboard</div></div>
+  <div class="login-sub">Sign in with the Google account that has access to wildnettechnologies.com in Search Console</div>
+  <button class="login-btn" id="loginBtn" onclick="doLogin()">Sign in with Google</button>
+  <div class="login-note">Uses Google Search Console API • Read only</div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-brand">Wildnet GSC</div>
+    <div class="topbar-site">wildnettechnologies.com</div>
+    <div class="topbar-right">
+      <div class="week-badge" id="weekBadge"></div>
+      <div class="alert-badge" id="alertBadge" onclick="showActionView()">🎯 <span id="alertCount">0</span> actionable URLs</div>
+      <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+      <button class="settings-btn" onclick="openSettings()">⚙ API Key</button>
+      <button class="logout-btn" onclick="doLogout()">Sign out</button>
+    </div>
+  </div>
+  <div class="loading-bar"><div class="loading-bar-fill" id="loadBar"></div></div>
+  <div class="loading-status" id="loadStatus"></div>
+  <div class="summary-row" id="summaryRow"></div>
+  <div class="branded-panel" id="brandedPanel" style="display:none">
+    <div class="branded-panel-title">🏷 Branded · "wildnet"</div>
+    <div class="branded-stats" id="brandedStats"></div>
+    <div class="branded-weeks" id="brandedWeeks"></div>
+  </div>
+  <div class="seg-tabs" id="segTabs"></div>
+
+  <div id="normalView">
+    <div class="table-wrap">
+      <div class="table-header-row">
+        <div class="seg-title" id="segTitle"></div>
+        <div class="page-count" id="pageCount"></div>
+        <button class="email-btn" id="emailBtn" onclick="openEmailModal()" style="display:none">📋 Copy Report</button>
+        <input class="search-box" id="searchBox" placeholder="Filter URLs…" oninput="filterTable()">
+      </div>
+      <div id="tableContainer"></div>
+    </div>
+  </div>
+
+  <div id="actionView">
+    <div style="padding:0 24px">
+      <div class="action-header">
+        <div>
+          <div class="action-title">🎯 Actionable URLs</div>
+          <div class="action-subtitle">Pages that dropped 10+ clicks vs last week — update content or review these pages</div>
+        </div>
+        <div class="action-count-badge" id="actionCountBadge">0 pages</div>
+      </div>
+      <div class="action-toolbar">
+        <button class="action-toolbar-btn" onclick="openEmailModal()">📋 Copy Report</button>
+        <button class="action-toolbar-btn" onclick="markAllDone()">✅ Mark all done</button>
+        <button class="action-toolbar-btn danger" onclick="clearAllNotes()">🗑 Clear notes & reset</button>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace" id="doneCount"></span>
+      </div>
+      <div id="actionCards"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="emailModal" onclick="if(event.target===this)closeEmailModal()">
+  <div class="modal">
+    <div class="modal-title">📋 Actionable URLs Report</div>
+    <div class="modal-sub">Copy this report and paste into Gmail, WhatsApp, Slack or anywhere</div>
+    <div class="modal-field">
+      <label class="modal-label">Report — select all and copy, or use the button below</label>
+      <textarea class="modal-preview" id="emailPreview" style="min-height:280px;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;resize:vertical;outline:none;line-height:1.7"></textarea>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closeEmailModal()">Close</button>
+      <button class="modal-btn primary" id="copyBtn" onclick="copyReport()">📋 Copy Report</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)closeSettings()">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-title">⚙ Anthropic API Key</div>
+    <div class="modal-sub">Saved in your browser only — never sent anywhere except Anthropic's API</div>
+    <div class="modal-field">
+      <label class="modal-label">API Key</label>
+      <input class="api-key-input" id="apiKeyInput" type="password" placeholder="sk-ant-api03-…" autocomplete="off">
+      <div class="api-status" id="apiKeyStatus"></div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;line-height:1.8;margin-bottom:16px">
+      🔒 Stored in localStorage — this browser only<br>
+      🗝 Get key at console.anthropic.com → API Keys<br>
+      ✦ Used only for "Analyze with AI" button
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="clearApiKey()">🗑 Clear</button>
+      <button class="modal-btn cancel" onclick="closeSettings()">Cancel</button>
+      <button class="modal-btn primary" onclick="saveApiKey()">Save Key</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const CLIENT_ID='939917237961-rg966h4dje3abcijo9dmr8e2md9k3nas.apps.googleusercontent.com';
+const PROPERTY='https://www.wildnettechnologies.com/';
+const NUM_WEEKS=8;
+const BRANDED_KW='wildnet';
+const DROP_THRESH=5;
+
+// ── SEGMENTS — ordered by priority (first match wins) ─────────────────────
+// Blogs / News / Case Studies MUST be checked first so content URLs
+// never bleed into service segments (e.g. /blogs/guest-posting-guide → Blogs)
+const SEGMENTS=[
+  // 0 — All Pages
+  {name:'All Pages', color:'#4f8eff', patterns:[]},
+
+  // 1 — Blogs (only /blogs/* URLs)
+  {name:'Blogs', color:'#4ade80', patterns:['/blogs/']},
+
+  // 2 — News (only /news/* URLs)
+  {name:'News', color:'#facc15', patterns:['/news/']},
+
+  // 3 — Case Studies (success stories + case studies content)
+  {name:'Case Studies', color:'#94a3b8', patterns:[
+    '/success-stories/',
+    '/case-studies/',
+  ]},
+
+  // 4 — SEO service pages + city SEO + industry SEO
+  {name:'SEO', color:'#f59e0b', patterns:[
+    '/digital-marketing/seo-services',
+    '/organic-seo-services',
+    '/technical-seo-agency',
+    '/off-page-seo-services',
+    '/on-page-seo-services',
+    '/digital-marketing/local-seo-services',
+    '/digital-marketing/ecommerce-seo-services',
+    '/digital-marketing/google-penalty-recovery-services',
+    '/ga4-consulting-services',
+    '/strategic-quora-marketing-services',
+    '/app-store-optimisation-services',
+    '/digital-pr-services',
+    '/best-seo-',
+    '/seo-expert-in-',
+    '/best-seo-agency-in-',
+    '/best-seo-marketing-',
+    '/best-seo-services-in-',
+    '/best-seo-marketing-firm',
+    '/healthcare-seo',
+    '/enterprise-seo',
+    '/education-seo',
+    '/real-estate-seo',
+    '/law-firm-seo',
+    '/travel-seo-services',
+    '/food-delivery-service-seo',
+    '/construction-seo',
+    '/manufacturing-company-seo',
+    '/fashion-seo',
+    '/electrician-seo',
+  ]},
+
+  // 5 — PPC service pages + city PPC
+  {name:'PPC', color:'#f43f5e', patterns:[
+    '/digital-marketing/ppc-services',
+    '/e-commerce-ppc-services',
+    '/digital-marketing/amazon-ppc-services',
+    '/bing-ads-management-services',
+    '/facebook-ads-services',
+    '/display-advertising-services',
+    '/remarketing-campaign-services',
+    '/youtube-advertising-services',
+    '/white-label-ppc-services',
+    '/hire-ppc-expert',
+    '/best-ppc-',
+    '/best-pay-per-click',
+  ]},
+
+  // 6 — Guest Posting (only actual service pages)
+  {name:'Guest Posting', color:'#34d399', patterns:[
+    '/digital-marketing/guest-posting-services',
+    '/white-label-guest-post-services',
+    '/white-label-guest-post/',
+  ]},
+
+  // 7 — Link Building service pages + city link building
+  {name:'Link Building', color:'#a78bfa', patterns:[
+    '/digital-marketing/link-building-services',
+    '/white-label-link-building-services',
+    '/white-label-link-building/',
+    '/best-link-building-',
+    '/link-building-specialist-',
+  ]},
+
+  // 8 — Social Media service pages + city social media
+  {name:'Social Media', color:'#f472b6', patterns:[
+    '/digital-marketing/social-media-marketing-services',
+    '/facebook-marketing-services',
+    '/linkedin-marketing-services',
+    '/twitter-marketing-services',
+    '/white-label-social-media-',
+    '/best-social-media-',
+    '/best-social-media-optimization',
+  ]},
+
+  // 9 — AI Pages
+  {name:'AI Pages', color:'#22d3ee', patterns:[
+    '/ai-seo-services',
+    '/ai-marketing-agency',
+    '/ai-digital-marketing-agency',
+    '/ai-link-building-services',
+    '/llm-seo-services',
+    '/generative-ai-seo-company',
+    '/perplexity-seo-services',
+    '/claude-ai-seo-services',
+    '/chatgpt-seo-services',
+    '/white-label-ai-services',
+    '/best-ai-digital-marketing',
+    '/best-generative-ai-seo',
+  ]},
+
+  // 10 — White Label (remaining white label not caught above)
+  {name:'White Label', color:'#818cf8', patterns:[
+    '/white-label-',
+    '/hire-seo-expert',
+  ]},
+
+  // 11 — IT Services
+  {name:'IT Services', color:'#fb923c', patterns:['/services/']},
+
+  // 12 — Digital Marketing catch-all (content, CRO, ORM, company pages, everything else)
+  {name:'Digital Marketing', color:'#ff7c5c', patterns:[]},
+];
+
+let token=null,weeks=[],allData={},brandedData=[],brandedByPage={},currentSeg=0,actionPages=[];
+let notes=JSON.parse(localStorage.getItem('wn_notes')||'{}');
+let done=JSON.parse(localStorage.getItem('wn_done')||'{}');
+
+function doLogin(){
+  const btn=document.getElementById('loginBtn');
+  btn.disabled=true;btn.textContent='Opening Google…';
+  const client=google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID,
+    scope:'https://www.googleapis.com/auth/webmasters.readonly',
+    callback:(resp)=>{
+      if(resp.error){showToast('Login failed: '+resp.error,true);btn.disabled=false;btn.textContent='Sign in with Google';return;}
+      token=resp.access_token;
+      document.getElementById('loginScreen').style.display='none';
+      document.getElementById('app').style.display='block';
+      loadData();
+    },
+  });
+  client.requestAccessToken({prompt:'select_account'});
+}
+
+function doLogout(){
+  token=null;allData={};weeks=[];
+  document.getElementById('app').style.display='none';
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('loginBtn').disabled=false;
+  document.getElementById('loginBtn').textContent='Sign in with Google';
+}
+
+function getWeeks(n){
+  const result=[],today=new Date(),dow=today.getDay();
+  const lastSun=new Date(today);
+  lastSun.setDate(today.getDate()-(dow===0?7:dow));
+  lastSun.setHours(0,0,0,0);
+  for(let w=n-1;w>=0;w--){
+    const sun=new Date(lastSun);sun.setDate(lastSun.getDate()-w*7);
+    const mon=new Date(sun);mon.setDate(sun.getDate()-6);
+    result.push({label:fmt(mon)+'–'+fmt(sun),start:toISO(mon),end:toISO(sun)});
+  }
+  return result;
+}
+function fmt(d){return(d.getMonth()+1)+'/'+d.getDate();}
+function toISO(d){return d.toISOString().split('T')[0];}
+
+async function gscFetch(body){
+  const res=await fetch('https://www.googleapis.com/webmasters/v3/sites/'+encodeURIComponent(PROPERTY)+'/searchAnalytics/query',
+    {method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const json=await res.json();
+  if(json.error)throw new Error(json.error.message);
+  return json.rows||[];
+}
+
+async function fetchWeek(start,end){
+  const rows=await gscFetch({startDate:start,endDate:end,dimensions:['page'],rowLimit:5000});
+  const map={};
+  rows.forEach(r=>{map[r.keys[0]]={clicks:r.clicks||0,impressions:r.impressions||0};});
+  return map;
+}
+
+async function fetchBrandedWeek(start,end){
+  try{
+    const rows=await gscFetch({startDate:start,endDate:end,dimensions:['page'],dimensionFilterGroups:[{filters:[{dimension:'query',operator:'contains',expression:BRANDED_KW}]}],rowLimit:5000});
+    let clicks=0,impressions=0;const byPage={};
+    rows.forEach(r=>{clicks+=r.clicks||0;impressions+=r.impressions||0;byPage[r.keys[0]]={clicks:r.clicks||0,impressions:r.impressions||0};});
+    return{clicks,impressions,byPage};
+  }catch(e){return{clicks:0,impressions:0,byPage:{}};}
+}
+
+async function loadData(){
+  setLoading(true,0,'Calculating weeks…');
+  weeks=getWeeks(NUM_WEEKS);
+  document.getElementById('weekBadge').textContent=weeks[0].label+' → '+weeks[weeks.length-1].label;
+  allData={};brandedData=[];brandedByPage={};
+  try{
+    for(let i=0;i<weeks.length;i++){
+      setLoading(true,Math.round(i/weeks.length*70),'Fetching '+weeks[i].label+'…');
+      const wm=await fetchWeek(weeks[i].start,weeks[i].end);
+      Object.entries(wm).forEach(([url,d])=>{
+        if(!allData[url])allData[url]=Array(weeks.length).fill(null).map(()=>({clicks:0,impressions:0}));
+        allData[url][i]=d;
+      });
+    }
+    Object.keys(allData).forEach(url=>{for(let i=0;i<weeks.length;i++)if(!allData[url][i])allData[url][i]={clicks:0,impressions:0};});
+    for(let i=0;i<weeks.length;i++){
+      setLoading(true,70+Math.round(i/weeks.length*25),'Fetching branded '+weeks[i].label+'…');
+      const b=await fetchBrandedWeek(weeks[i].start,weeks[i].end);
+      brandedData.push({clicks:b.clicks,impressions:b.impressions});
+      Object.entries(b.byPage).forEach(([url,d])=>{
+        if(!brandedByPage[url])brandedByPage[url]=Array(weeks.length).fill(null).map(()=>({clicks:0,impressions:0}));
+        brandedByPage[url][i]=d;
+      });
+    }
+    Object.keys(brandedByPage).forEach(url=>{for(let i=0;i<weeks.length;i++)if(!brandedByPage[url][i])brandedByPage[url][i]={clicks:0,impressions:0};});
+    setLoading(true,100,'Rendering…');
+    computeActionPages();
+    buildSummary();
+    buildBrandedPanel();
+    buildTabs();
+    showSegment(0);
+    setTimeout(()=>setLoading(false),300);
+  }catch(e){setLoading(false);showToast('Error: '+e.message,true);}
+}
+
+function computeActionPages(){
+  actionPages=[];
+  const last=weeks.length-1,prev=weeks.length-2;
+  Object.keys(allData).forEach(url=>{
+    const thisClicks=allData[url][last].clicks,lastClicks=allData[url][prev].clicks;
+    const thisImpr=allData[url][last].impressions,lastImpr=allData[url][prev].impressions;
+    const clickDrop=lastClicks-thisClicks;
+    const imprDrop=lastImpr-thisImpr;
+    if(clickDrop>=DROP_THRESH||imprDrop>=50){
+      actionPages.push({url,thisW:thisClicks,lastW:lastClicks,drop:clickDrop,
+        thisImpr,lastImpr,imprDrop,seg:getSegName(url)});
+    }
+  });
+  actionPages.sort((a,b)=>b.drop-a.drop);
+  const badge=document.getElementById('alertBadge');
+  document.getElementById('alertCount').textContent=actionPages.length;
+  badge.style.display=actionPages.length>0?'block':'none';
+}
+
+function getSegName(url){
+  const idx=classifyURL(url);
+  return SEGMENTS[idx]?SEGMENTS[idx].name:'Digital Marketing';
+}
+function classifyURL(url){
+  const path=url.replace(/^https?:\/\/[^/]+/,'').toLowerCase();
+  // 0=All Pages, 12=Digital Marketing catch-all — check 1–11 in order
+  for(let i=1;i<=11;i++){
+    if(SEGMENTS[i].patterns.length>0 && SEGMENTS[i].patterns.some(p=>path.includes(p)))return i;
+  }
+  return 12; // Digital Marketing catch-all
+}
+function getPagesForSeg(idx){
+  if(idx===0)return Object.keys(allData);
+  return Object.keys(allData).filter(url=>classifyURL(url)===idx);
+}
+
+function buildSummary(){
+  const c=document.getElementById('summaryRow');c.innerHTML='';
+  SEGMENTS.forEach((seg,i)=>{
+    const pages=getPagesForSeg(i);
+    const last=pages.reduce((s,u)=>s+allData[u][weeks.length-1].clicks,0);
+    const prev=pages.reduce((s,u)=>s+allData[u][weeks.length-2].clicks,0);
+    const wow=prev>0?((last-prev)/prev*100):0;
+    const wc=wow>2?'up':wow<-2?'down':'flat';
+    const card=document.createElement('div');
+    card.className='summary-card';card.style.borderColor=i===currentSeg?seg.color:'';
+    card.innerHTML=`<div class="card-label" style="color:${seg.color}">${seg.name}</div><div class="card-clicks" style="color:${seg.color}">${last.toLocaleString()}</div><div class="card-wow ${wc}">${wow>0?'+':''}${wow.toFixed(1)}% WoW</div>`;
+    card.onclick=()=>showSegment(i);c.appendChild(card);
+  });
+}
+
+function buildBrandedPanel(){
+  document.getElementById('brandedPanel').style.display='flex';
+  const last=brandedData[brandedData.length-1]||{clicks:0,impressions:0};
+  const prev=brandedData[brandedData.length-2]||{clicks:0,impressions:0};
+  const totalLast=Object.values(allData).reduce((s,w)=>s+w[weeks.length-1].clicks,0);
+  const wowC=prev.clicks>0?((last.clicks-prev.clicks)/prev.clicks*100):0;
+  const wowI=prev.impressions>0?((last.impressions-prev.impressions)/prev.impressions*100):0;
+  const pct=totalLast>0?(last.clicks/totalLast*100):0;
+  document.getElementById('brandedStats').innerHTML=`
+    <div class="branded-stat"><div class="branded-stat-label">This Week Clicks</div><div class="branded-stat-val">${last.clicks.toLocaleString()}</div><div class="branded-stat-wow ${wowC>0?'up':wowC<0?'down':'flat'}">${wowC>0?'+':''}${wowC.toFixed(1)}% WoW</div></div>
+    <div class="branded-stat"><div class="branded-stat-label">This Week Impr</div><div class="branded-stat-val">${last.impressions.toLocaleString()}</div><div class="branded-stat-wow ${wowI>0?'up':wowI<0?'down':'flat'}">${wowI>0?'+':''}${wowI.toFixed(1)}% WoW</div></div>
+    <div class="branded-stat"><div class="branded-stat-label">Branded % of Total</div><div class="branded-stat-val">${pct.toFixed(1)}%</div><div class="branded-stat-wow flat">branded share</div></div>`;
+  document.getElementById('brandedWeeks').innerHTML=brandedData.map((b,i)=>`<div class="branded-week-chip"><span>${weeks[i].label}</span><br>${b.clicks.toLocaleString()} clk · ${b.impressions.toLocaleString()} imp</div>`).join('');
+}
+
+function buildTabs(){
+  const tabs=document.getElementById('segTabs');tabs.innerHTML='';
+  SEGMENTS.forEach((seg,i)=>{
+    const pages=getPagesForSeg(i);
+    const tab=document.createElement('button');
+    tab.className='seg-tab'+(i===0?' active':'');
+    tab.style.color=i===0?seg.color:'';
+    tab.textContent=seg.name+' ('+pages.length+')';
+    tab.onclick=()=>showSegment(i);tabs.appendChild(tab);
+  });
+  const atab=document.createElement('button');
+  atab.className='seg-tab action-tab-btn';atab.id='actionTab';
+  atab.textContent='🎯 Actionable URLs ('+actionPages.length+')';
+  atab.onclick=showActionView;tabs.appendChild(atab);
+}
+
+function showSegment(segIdx){
+  currentSeg=segIdx;
+  document.getElementById('searchBox').value='';
+  document.getElementById('normalView').style.display='block';
+  document.getElementById('actionView').style.display='none';
+  document.querySelectorAll('.seg-tab').forEach((t,i)=>{t.classList.toggle('active',i===segIdx);t.style.color=i===segIdx?SEGMENTS[i].color:'';});
+  const at=document.getElementById('actionTab');if(at)at.classList.remove('active');
+  document.querySelectorAll('.summary-card').forEach((c,i)=>{c.style.borderColor=i===segIdx?SEGMENTS[i].color:'';});
+  const seg=SEGMENTS[segIdx];
+  const pages=getPagesForSeg(segIdx).sort((a,b)=>allData[b][weeks.length-1].clicks-allData[a][weeks.length-1].clicks);
+  document.getElementById('segTitle').textContent=seg.name;
+  document.getElementById('segTitle').style.color=seg.color;
+  document.getElementById('pageCount').textContent=pages.length+' pages';
+  document.getElementById('emailBtn').style.display='inline-flex';
+  renderTable(pages);
+}
+
+function showActionView(){
+  document.getElementById('normalView').style.display='none';
+  document.getElementById('actionView').style.display='block';
+  document.getElementById('emailBtn').style.display='none';
+  document.querySelectorAll('.seg-tab').forEach(t=>t.classList.remove('active'));
+  const at=document.getElementById('actionTab');if(at)at.classList.add('active');
+  renderActionCards();
+}
+
+function renderActionCards(){
+  const container=document.getElementById('actionCards');
+  document.getElementById('actionCountBadge').textContent=actionPages.length+' pages';
+  const doneItems=actionPages.filter(p=>done[p.url]);
+  document.getElementById('doneCount').textContent=doneItems.length+'/'+actionPages.length+' fixed ✓';
+  if(actionPages.length===0){container.innerHTML='<div class="empty-state"><span>🎉</span>No pages dropped 10+ clicks this week. Great!</div>';return;}
+  container.innerHTML=actionPages.map((p,i)=>{
+    const isDone=!!done[p.url];
+    const note=notes[p.url]||'';
+    const shortUrl=p.url.replace('https://www.wildnettechnologies.com','');
+    const segColor=SEGMENTS.find(s=>s.name===p.seg)?.color||'#f43f5e';
+    const wpSearch=`https://www.wildnettechnologies.com/wp-admin/edit.php?s=${encodeURIComponent(shortUrl.replace(/\//g,' ').trim())}`;
+    const gscLink=`https://search.google.com/search-console/performance/search-analytics?resource_id=${encodeURIComponent(PROPERTY)}&page=${encodeURIComponent(p.url)}`;
+    return `<div class="action-card${isDone?' done':''}" id="acard-${i}">
+      <div class="action-card-top">
+        <div class="action-checkbox${isDone?' checked':''}" onclick="toggleDone(${i})" title="${isDone?'Mark as not done':'Mark as fixed'}">${isDone?'✓':''}</div>
+        <div class="action-card-body">
+          <div class="action-url" title="${p.url}">${shortUrl||'/'}</div>
+          <div class="action-meta">
+            <span class="action-drop">▼ ${p.drop} clicks</span>
+            <span class="action-clicks">${p.lastW} → ${p.thisW} clicks</span>
+            ${p.imprDrop>=50?`<span class="action-drop" style="background:rgba(249,115,22,0.15);color:#f97316;border-color:rgba(249,115,22,0.3)">▼ ${p.imprDrop.toLocaleString()} impr</span>`:''}
+            <span class="action-seg" style="color:${segColor}">${p.seg}</span>
+          </div>
+          <div class="action-links">
+            <a class="action-link-btn view" href="${p.url}" target="_blank">👁 View page</a>
+            <a class="action-link-btn edit" href="${wpSearch}" target="_blank">✏️ Edit in WordPress</a>
+            <a class="action-link-btn gsc" href="${gscLink}" target="_blank">📊 GSC data</a>
+          </div>
+          <textarea class="action-note" id="note-${i}" placeholder="Write what needs to be fixed on this page…" oninput="saveNote(${i})">${note}</textarea>
+          <div class="action-note-saved" id="saved-${i}">✓ Note saved</div>
+          <div class="ai-section">
+            <button class="ai-analyze-btn" id="ai-btn-${i}" onclick="analyzeWithAI(${i})">
+              ✦ Analyze with AI — Top 3 competitors + what's missing
+            </button>
+            <div class="ai-loading" id="ai-loading-${i}">
+              <div class="ai-loading-dot"></div><div class="ai-loading-dot"></div><div class="ai-loading-dot"></div>
+              <span id="ai-loading-msg-${i}">Fetching top results…</span>
+            </div>
+            <div class="competitors-wrap" id="competitors-${i}"></div>
+            <div class="ai-notes-wrap" id="ai-notes-${i}"></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleDone(i){
+  const url=actionPages[i].url;
+  done[url]=!done[url];
+  if(!done[url])delete done[url];
+  localStorage.setItem('wn_done',JSON.stringify(done));
+  renderActionCards();
+}
+
+function saveNote(i){
+  const url=actionPages[i].url;
+  notes[url]=document.getElementById('note-'+i).value;
+  localStorage.setItem('wn_notes',JSON.stringify(notes));
+  const s=document.getElementById('saved-'+i);s.style.display='block';
+  setTimeout(()=>{s.style.display='none';},1500);
+}
+
+function markAllDone(){
+  actionPages.forEach(p=>{done[p.url]=true;});
+  localStorage.setItem('wn_done',JSON.stringify(done));
+  renderActionCards();
+  showToast('✓ All pages marked as done!');
+}
+
+function clearAllNotes(){
+  if(!confirm('Clear all notes and reset all checkboxes?'))return;
+  actionPages.forEach(p=>{delete notes[p.url];delete done[p.url];});
+  localStorage.setItem('wn_notes',JSON.stringify(notes));
+  localStorage.setItem('wn_done',JSON.stringify(done));
+  renderActionCards();
+  showToast('Notes and checkboxes cleared.');
+}
+
+function openEmailModal(){
+  document.getElementById('emailModal').style.display='flex';
+  buildEmailPreview();
+}
+function closeEmailModal(){document.getElementById('emailModal').style.display='none';}
+
+function buildEmailPreview(){
+  const tw=weeks[weeks.length-1]?.label||'', lw=weeks[weeks.length-2]?.label||'';
+  const now=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
+  let body=`WILDNET TECHNOLOGIES — ACTIONABLE URLs REPORT\n`;
+  body+=`Week: ${tw} vs ${lw}  |  Generated: ${now}\n`;
+  body+=`${'═'.repeat(60)}\n\n`;
+  if(actionPages.length===0){
+    body+=`✅ Great news! No pages dropped 10+ clicks this week.\n`;
+  } else {
+    body+=`${actionPages.length} pages need attention (sorted by biggest drop):\n\n`;
+    actionPages.forEach((p,i)=>{
+      const shortUrl=p.url.replace('https://www.wildnettechnologies.com','');
+      const note=notes[p.url]?`\n   📝 Fix note: ${notes[p.url]}`:'';
+      const status=done[p.url]?'✓ FIXED  ':'⚠ PENDING';
+      body+=`[${status}] ${i+1}. ${shortUrl}\n`;
+      body+=`   Drop: ▼${p.drop} clicks  (${p.lastW} last week → ${p.thisW} this week)\n`;
+      body+=`   Section: ${p.seg}\n`;
+      body+=`   Full URL: ${p.url}${note}\n\n`;
+    });
+    // Summary by segment
+    const bySegment={};
+    actionPages.forEach(p=>{bySegment[p.seg]=(bySegment[p.seg]||0)+1;});
+    body+=`${'─'.repeat(60)}\nSUMMARY BY SECTION:\n`;
+    Object.entries(bySegment).sort((a,b)=>b[1]-a[1]).forEach(([seg,count])=>{
+      body+=`  ${seg}: ${count} page${count>1?'s':''}\n`;
+    });
+  }
+  body+=`\n${'═'.repeat(60)}\nDashboard: https://warm-cupcake-e8ccc2.netlify.app`;
+  document.getElementById('emailPreview').value=body;
+}
+
+function copyReport(){
+  const text=document.getElementById('emailPreview').value;
+  navigator.clipboard.writeText(text).then(()=>{
+    const btn=document.getElementById('copyBtn');
+    btn.textContent='✓ Copied!';
+    btn.style.background='var(--green)';
+    setTimeout(()=>{btn.textContent='📋 Copy Report';btn.style.background='';},2500);
+    showToast('✓ Report copied! Paste into Gmail, WhatsApp or Slack.');
+  }).catch(()=>{
+    // Fallback — select text so user can manually copy
+    const ta=document.getElementById('emailPreview');
+    ta.select();ta.setSelectionRange(0,99999);
+    showToast('Press Ctrl+C to copy the selected report.');
+  });
+}
+
+function renderTable(pages){
+  const container=document.getElementById('tableContainer');
+  if(pages.length===0){container.innerHTML='<div class="empty-state"><span>📭</span>No pages found for this segment</div>';return;}
+
+  let thead=`<thead><tr>
+    <th rowspan="2" style="background:var(--surface);border-bottom:1px solid var(--border);border-right:1px solid var(--border);padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);position:sticky;top:56px;left:0;z-index:20;min-width:340px">FULL PAGE URL</th>
+    <th rowspan="2" class="th-branded" style="position:sticky;top:56px;z-index:10;min-width:90px;text-align:center;font-size:9px;font-weight:700;padding:8px 10px;vertical-align:middle">🏷 BRANDED<br><span style="color:var(--muted);font-size:8px">this week</span></th>
+    <th rowspan="2" style="background:var(--surface);border-bottom:1px solid var(--border);border-left:2px solid rgba(244,63,94,0.3);border-right:2px solid rgba(244,63,94,0.3);padding:8px 10px;text-align:center;font-size:9px;font-weight:700;color:var(--red);position:sticky;top:56px;z-index:10;min-width:80px;vertical-align:middle">⚠<br>ACTION</th>`;
+
+  weeks.forEach((w,i)=>{
+    const isLast=i===weeks.length-1;
+    thead+=`<th colspan="2" class="th-week-group" style="${isLast?'background:rgba(79,142,255,0.08);color:var(--accent)':''}">${w.label}</th>`;
+  });
+  thead+=`</tr><tr>`;
+  weeks.forEach((w,i)=>{
+    const ls=i===weeks.length-1?'background:rgba(79,142,255,0.05)':'';
+    thead+=`<th class="th-sub clicks" style="${ls}">CLICKS</th><th class="th-sub impr week-border" style="${ls};color:#f97316">IMPR</th>`;
+  });
+  thead+=`</tr></thead>`;
+
+  let tbody='<tbody>';
+  pages.forEach(url=>{
+    const shortUrl=url.replace('https://www.wildnettechnologies.com','');
+    const lastC=allData[url][weeks.length-1].clicks,prevC=allData[url][weeks.length-2].clicks;
+    const drop=prevC-lastC,isDecline=drop>=DROP_THRESH,isDone=!!done[url];
+
+    tbody+=`<tr class="data-row${isDone?' done-row':''}" data-url="${url.toLowerCase()}">`;
+    tbody+=`<td class="url-cell" title="${url}"><a href="${url}" target="_blank" style="color:inherit;text-decoration:none">${shortUrl||'/'}</a></td>`;
+
+    const bTW=(brandedByPage[url]&&brandedByPage[url][weeks.length-1])||{clicks:0,impressions:0};
+    const bPct=lastC>0?(bTW.clicks/lastC*100):0;
+    tbody+=`<td class="branded-cell">${bTW.clicks>0?`${bTW.clicks} <span style="font-size:9px;opacity:0.7">(${bPct.toFixed(0)}%)</span>`:'<span style="opacity:0.3">—</span>'}</td>`;
+
+    if(isDecline){
+      tbody+=`<td style="text-align:center;background:rgba(244,63,94,0.08);border-left:2px solid rgba(244,63,94,0.3);border-right:2px solid rgba(244,63,94,0.3)"><span style="color:var(--red);font-weight:700;font-size:11px;cursor:pointer" onclick="showActionView()" title="Click to see Action Required">▼${drop}</span></td>`;
+    }else{
+      tbody+=`<td style="text-align:center;color:var(--muted);font-size:10px;border-left:2px solid rgba(244,63,94,0.1);border-right:2px solid rgba(244,63,94,0.1)">—</td>`;
+    }
+
+    weeks.forEach((w,i)=>{
+      const d=allData[url][i],prev=i>0?allData[url][i-1]:null;
+      // Clicks cell — green up, red down
+      let cls='neutral';
+      if(prev!==null&&prev.clicks>0)cls=d.clicks>prev.clicks?'up':d.clicks<prev.clicks?'down':'neutral';
+      tbody+=`<td class="${cls}">${d.clicks>0?d.clicks.toLocaleString():'—'}</td>`;
+      // Impressions cell — orange when dropping vs prev week
+      let imprStyle='';
+      if(prev!==null&&prev.impressions>0&&d.impressions<prev.impressions){
+        imprStyle='color:#f97316;background:rgba(249,115,22,0.08);font-weight:600';
+      } else if(prev!==null&&prev.impressions>0&&d.impressions>prev.impressions){
+        imprStyle='color:#a78bfa';
+      } else {
+        imprStyle='color:#a78bfa;opacity:0.6';
+      }
+      tbody+=`<td class="week-border" style="${imprStyle};text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;padding:7px 10px;border-bottom:1px solid rgba(37,40,54,0.5);white-space:nowrap">${d.impressions>0?d.impressions.toLocaleString():'—'}</td>`;
+    });
+    tbody+=`</tr>`;
+  });
+  tbody+='</tbody>';
+  container.innerHTML=`<table>${thead}${tbody}</table>`;
+}
+
+// ── AI ANALYSIS ───────────────────────────────────────────────────────────
+function urlToKeyword(url){
+  const path=url.replace(/^https?:\/\/[^/]+/,'').replace(/\/+$/,'');
+  const slug=path.split('/').filter(Boolean).pop()||'';
+  return slug
+    .replace(/-services?$/,'').replace(/-agency$/,'').replace(/-company$/,'')
+    .replace(/-solutions?$/,'').replace(/-expert$/,'').replace(/-in-\w+$/,'')
+    .replace(/-/g,' ').trim();
+}
+
+async function analyzeWithAI(i){
+  const p=actionPages[i];
+  if(!p)return;
+  const btn=document.getElementById('ai-btn-'+i);
+  const loading=document.getElementById('ai-loading-'+i);
+  const compWrap=document.getElementById('competitors-'+i);
+  const notesWrap=document.getElementById('ai-notes-'+i);
+
+  btn.disabled=true; btn.textContent='Analyzing…';
+  loading.style.display='flex'; compWrap.style.display='none'; notesWrap.style.display='none';
+
+  const keyword=urlToKeyword(p.url);
+  const shortUrl=p.url.replace('https://www.wildnettechnologies.com','');
+
+  try{
+    document.getElementById('ai-loading-msg-'+i).textContent='Searching Google for real competitors… (20–30 sec)';
+
+    const prompt=`You are a senior SEO content strategist. Your job is to find the REAL top 3 pages currently ranking on Google for a keyword, then analyze what is missing from the client's page.
+
+Page URL: ${p.url}
+Main keyword (from URL): "${keyword}"
+Click drop: ${p.lastW} → ${p.thisW} clicks this week (lost ${p.drop} clicks)
+Website: Wildnet Technologies — an India-based digital marketing agency
+
+INSTRUCTIONS:
+1. Use the web_search tool to search Google for: ${keyword}
+2. From the REAL search results, identify the top 3 actual ranking pages (skip ads, skip wildnettechnologies.com itself)
+3. Use the actual titles and URLs from the search results
+4. Then analyze what content those pages have that the Wildnet page is likely missing
+
+Return ONLY this JSON (no markdown, no explanation):
+{
+  "keyword": "${keyword}",
+  "competitors": [
+    {"rank": 1, "title": "REAL title from search result", "url": "REAL url from search result", "why": "Specific reason why this ranks — content depth, schema, authority etc"},
+    {"rank": 2, "title": "REAL title from search result", "url": "REAL url from search result", "why": "Specific reason why this ranks"},
+    {"rank": 3, "title": "REAL title from search result", "url": "REAL url from search result", "why": "Specific reason why this ranks"}
+  ],
+  "missing": [
+    {"icon": "📝", "point": "Content depth", "detail": "Specific subtopics from competitor pages that are missing"},
+    {"icon": "🎯", "point": "Keyword coverage", "detail": "Specific LSI/related terms competitors use that are missing"},
+    {"icon": "⭐", "point": "E-E-A-T signals", "detail": "Author bio, certifications, case studies competitors show"},
+    {"icon": "🔗", "point": "Internal linking", "detail": "Related pages to link from/to for topical authority"},
+    {"icon": "📊", "point": "Schema markup", "detail": "Specific schema types competitors use (FAQ, HowTo, etc)"},
+    {"icon": "🚀", "point": "Page experience", "detail": "Core Web Vitals, mobile UX improvements needed"}
+  ]
+}`;
+
+    const apiKey=getApiKey();
+    if(!apiKey){
+      btn.disabled=false;btn.textContent='✦ Analyze with AI';
+      loading.style.display='none';
+      showToast('Add your Anthropic API key — click ⚙ API Key in the top bar',true);
+      return;
+    }
+
+    // Use web_search tool so Claude fetches REAL Google results
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-5',
+        max_tokens:2000,
+        tools:[{"type":"web_search_20250305","name":"web_search"}],
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    const data=await res.json();
+    if(data.error){throw new Error(data.error.message||'API error — check key in ⚙ Settings');}
+
+    // web_search_20250305 is a built-in server-side tool.
+    // Anthropic executes the search and returns results automatically in the content blocks.
+    // We run an agentic loop: keep calling until we get a final text answer.
+    let raw='';
+    let loopData=data;
+    let loopMessages=[{role:'user',content:prompt}];
+    for(let round=0;round<4;round++){
+      const stopReason=loopData.stop_reason;
+      const blocks=loopData.content||[];
+      // Collect text
+      const texts=blocks.filter(b=>b.type==='text').map(b=>b.text).join('');
+      if(texts && (stopReason==='end_turn'||stopReason==='max_tokens')){raw=texts;break;}
+      // If tool_use, continue the conversation
+      if(stopReason==='tool_use'){
+        document.getElementById('ai-loading-msg-'+i).textContent='Reading real Google results… almost done';
+        loopMessages.push({role:'assistant',content:blocks});
+        const toolResults=blocks.filter(b=>b.type==='tool_use').map(b=>({type:'tool_result',tool_use_id:b.id,content:'Search complete.'}));
+        loopMessages.push({role:'user',content:toolResults});
+        const r2=await fetch('https://api.anthropic.com/v1/messages',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+          body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:2000,tools:[{"type":"web_search_20250305","name":"web_search"}],messages:loopMessages})
+        });
+        loopData=await r2.json();
+        if(loopData.error){throw new Error(loopData.error.message||'API error on follow-up');}
+      } else {
+        raw=texts;break;
+      }
+    }
+    if(!raw){throw new Error('Empty response from API. Try again.');}
+    let jsonStr=raw.trim().replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim();
+    const s=jsonStr.indexOf('{'),e=jsonStr.lastIndexOf('}');
+    if(s===-1||e===-1){throw new Error('No JSON in response. Try again.');}
+    jsonStr=jsonStr.slice(s,e+1);
+    let parsed;
+    try{ parsed=JSON.parse(jsonStr); }
+    catch(e2){ throw new Error('Parse error: '+e2.message); }
+
+    // Render top 3 competitors
+    const comps=parsed.competitors||[];
+    compWrap.innerHTML=`<div class="competitors-title">🏆 Top 3 ranking pages for "${parsed.keyword||keyword}"</div>`+
+      comps.map(c=>`<div class="competitor-card">
+        <div class="competitor-rank">#${c.rank} RANKING</div>
+        <div class="competitor-title">${c.title||'—'}</div>
+        <a href="${c.url||'#'}" target="_blank" class="competitor-url">${c.url||''}</a>
+        <div style="font-size:11px;color:var(--muted);margin-top:5px;font-family:'Syne',sans-serif;line-height:1.5">${c.why||''}</div>
+      </div>`).join('');
+    compWrap.style.display='block';
+
+    // Render what's missing
+    const missing=parsed.missing||[];
+    notesWrap.innerHTML=`<div class="ai-notes-title">What's likely missing on your page</div>`+
+      missing.map(m=>`<div class="ai-note-point">
+        <div class="ai-note-icon">${m.icon||'•'}</div>
+        <div class="ai-note-text"><strong>${m.point}</strong> — ${m.detail}</div>
+      </div>`).join('');
+    notesWrap.style.display='block';
+
+    // Auto-fill note textarea if empty
+    const noteEl=document.getElementById('note-'+i);
+    if(!noteEl.value.trim()){
+      noteEl.value='AI Analysis ('+new Date().toLocaleDateString()+'):\n'+
+        missing.map(m=>`${m.icon} ${m.point}: ${m.detail}`).join('\n');
+      saveNote(i);
+    }
+
+    btn.textContent='✦ Re-analyze'; btn.disabled=false;
+  }catch(e){
+    btn.disabled=false; btn.textContent='✦ Analyze with AI';
+    showToast('Analysis failed: '+e.message,true);
+  }finally{
+    loading.style.display='none';
+  }
+}
+
+function openSettings(){
+  const saved=localStorage.getItem('wn_api_key')||'';
+  document.getElementById('apiKeyInput').value=saved;
+  const st=document.getElementById('apiKeyStatus');
+  if(saved&&saved.startsWith('sk-ant-')){st.textContent='✓ Key saved (ends …'+saved.slice(-4)+')';st.className='api-status ok';}
+  else{st.textContent='No key saved';st.className='api-status warn';}
+  document.getElementById('settingsModal').style.display='flex';
+}
+function closeSettings(){document.getElementById('settingsModal').style.display='none';}
+function saveApiKey(){
+  const val=document.getElementById('apiKeyInput').value.trim();
+  if(!val){showToast('Enter an API key first',true);return;}
+  if(!val.startsWith('sk-ant-')){showToast('Key should start with sk-ant-',true);return;}
+  localStorage.setItem('wn_api_key',val);
+  showToast('✓ API key saved! AI analysis enabled.');
+  setTimeout(closeSettings,600);
+}
+function clearApiKey(){
+  localStorage.removeItem('wn_api_key');
+  document.getElementById('apiKeyInput').value='';
+  document.getElementById('apiKeyStatus').textContent='No key saved';
+  document.getElementById('apiKeyStatus').className='api-status warn';
+  showToast('API key cleared.');
+}
+function getApiKey(){return localStorage.getItem('wn_api_key')||'';}
+
+function filterTable(){
+  const q=document.getElementById('searchBox').value.toLowerCase();
+  document.querySelectorAll('tr.data-row').forEach(row=>{row.style.display=row.dataset.url.includes(q)?'':'none';});
+}
+
+function setLoading(on,pct,msg){
+  document.getElementById('loadBar').style.width=on?pct+'%':'0%';
+  const s=document.getElementById('loadStatus');s.style.display=on&&msg?'block':'none';s.textContent=msg||'';
+}
+function showToast(msg,isErr){
+  const t=document.getElementById('toast');t.textContent=msg;
+  t.className='toast'+(isErr?' error':'');t.style.display='block';
+  setTimeout(()=>{t.style.display='none';},4000);
+}
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</body>
+</html>
