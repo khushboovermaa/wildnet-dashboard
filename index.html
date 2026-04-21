@@ -244,23 +244,42 @@
 </div>
 
 <div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)closeSettings()">
-  <div class="modal" style="max-width:460px">
-    <div class="modal-title">⚙ Anthropic API Key</div>
-    <div class="modal-sub">Saved in your browser only — never sent anywhere except Anthropic's API</div>
+  <div class="modal" style="max-width:500px">
+    <div class="modal-title">⚙ Settings</div>
+    <div class="modal-sub">All credentials saved in your browser only — never sent to any third party</div>
+
     <div class="modal-field">
-      <label class="modal-label">API Key</label>
+      <label class="modal-label">Anthropic API Key</label>
       <input class="api-key-input" id="apiKeyInput" type="password" placeholder="sk-ant-api03-…" autocomplete="off">
       <div class="api-status" id="apiKeyStatus"></div>
     </div>
+
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;line-height:1.8;margin-bottom:16px">
+      🗝 Get key at console.anthropic.com → API Keys
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin:16px 0;"></div>
+    <div style="font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:12px">🔧 WordPress Auto-Update</div>
+
+    <div class="modal-field">
+      <label class="modal-label">WordPress Username</label>
+      <input class="api-key-input" id="wpUserInput" type="text" placeholder="admin" autocomplete="off">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">WordPress Application Password</label>
+      <input class="api-key-input" id="wpPassInput" type="password" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" autocomplete="off">
+      <div class="api-status" id="wpStatus"></div>
+    </div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;line-height:1.8;margin-bottom:16px">
       🔒 Stored in localStorage — this browser only<br>
-      🗝 Get key at console.anthropic.com → API Keys<br>
-      ✦ Used only for "Analyze with AI" button
+      📍 WP Admin → Users → Your Profile → Application Passwords<br>
+      ✦ Used only for "Auto-Update Page" button
     </div>
+
     <div class="modal-btns">
-      <button class="modal-btn cancel" onclick="clearApiKey()">🗑 Clear</button>
+      <button class="modal-btn cancel" onclick="clearAllSettings()">🗑 Clear All</button>
       <button class="modal-btn cancel" onclick="closeSettings()">Cancel</button>
-      <button class="modal-btn primary" onclick="saveApiKey()">Save Key</button>
+      <button class="modal-btn primary" onclick="saveAllSettings()">Save Settings</button>
     </div>
   </div>
 </div>
@@ -619,7 +638,9 @@ function renderActionCards(){
     const note=notes[p.url]||'';
     const shortUrl=p.url.replace('https://www.wildnettechnologies.com','');
     const segColor=SEGMENTS.find(s=>s.name===p.seg)?.color||'#f43f5e';
-    const wpSearch=`https://www.wildnettechnologies.com/wp-admin/edit.php?s=${encodeURIComponent(shortUrl.replace(/\//g,' ').trim())}`;
+    // Build a direct WP editor link by searching for the post by slug
+    const slug=shortUrl.replace(/^\/|\/$/g,'').split('/').pop()||'';
+    const wpSearch=`https://www.wildnettechnologies.com/wp-admin/edit.php?s=${encodeURIComponent(slug)}&post_type=any`;
     const gscLink=`https://search.google.com/search-console/performance/search-analytics?resource_id=${encodeURIComponent(PROPERTY)}&page=${encodeURIComponent(p.url)}`;
     return `<div class="action-card${isDone?' done':''}" id="acard-${i}">
       <div class="action-card-top">
@@ -634,21 +655,28 @@ function renderActionCards(){
           </div>
           <div class="action-links">
             <a class="action-link-btn view" href="${p.url}" target="_blank">👁 View page</a>
-            <a class="action-link-btn edit" href="${wpSearch}" target="_blank">✏️ Edit in WordPress</a>
+            <a class="action-link-btn edit" href="${wpSearch}" target="_blank" title="Search for this page in WP Admin">✏️ Edit in WordPress</a>
+            <a class="action-link-btn edit" href="https://www.wildnettechnologies.com/wp-admin/" target="_blank" style="background:rgba(167,139,250,0.12);color:#a78bfa">🔑 WP Admin</a>
             <a class="action-link-btn gsc" href="${gscLink}" target="_blank">📊 GSC data</a>
           </div>
           <textarea class="action-note" id="note-${i}" placeholder="Write what needs to be fixed on this page…" oninput="saveNote(${i})">${note}</textarea>
           <div class="action-note-saved" id="saved-${i}">✓ Note saved</div>
           <div class="ai-section">
-            <button class="ai-analyze-btn" id="ai-btn-${i}" onclick="analyzeWithAI(${i})">
-              ✦ Analyze with AI — Top 3 competitors + what's missing
-            </button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <button class="ai-analyze-btn" id="ai-btn-${i}" onclick="analyzeWithAI(${i})">
+                ✦ Analyze with AI
+              </button>
+              <button class="ai-analyze-btn" id="wp-btn-${i}" onclick="autoUpdatePage(${i})" style="background:linear-gradient(135deg,#22c55e,#16a34a);display:none">
+                🚀 Auto-Update Page on WordPress
+              </button>
+            </div>
             <div class="ai-loading" id="ai-loading-${i}">
               <div class="ai-loading-dot"></div><div class="ai-loading-dot"></div><div class="ai-loading-dot"></div>
               <span id="ai-loading-msg-${i}">Fetching top results…</span>
             </div>
             <div class="competitors-wrap" id="competitors-${i}"></div>
             <div class="ai-notes-wrap" id="ai-notes-${i}"></div>
+            <div id="wp-update-${i}" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px"></div>
           </div>
         </div>
       </div>
@@ -950,6 +978,10 @@ Return ONLY this JSON (no markdown, no explanation):
     }
 
     btn.textContent='✦ Re-analyze'; btn.disabled=false;
+    // Show auto-update button if WP credentials are saved
+    if(getWpUser()&&getWpPass()){
+      document.getElementById('wp-btn-'+i).style.display='flex';
+    }
   }catch(e){
     btn.disabled=false; btn.textContent='✦ Analyze with AI';
     showToast('Analysis failed: '+e.message,true);
@@ -959,30 +991,201 @@ Return ONLY this JSON (no markdown, no explanation):
 }
 
 function openSettings(){
-  const saved=localStorage.getItem('wn_api_key')||'';
-  document.getElementById('apiKeyInput').value=saved;
+  document.getElementById('apiKeyInput').value=localStorage.getItem('wn_api_key')||'';
+  document.getElementById('wpUserInput').value=localStorage.getItem('wn_wp_user')||'';
+  document.getElementById('wpPassInput').value=localStorage.getItem('wn_wp_pass')||'';
   const st=document.getElementById('apiKeyStatus');
+  const saved=localStorage.getItem('wn_api_key')||'';
   if(saved&&saved.startsWith('sk-ant-')){st.textContent='✓ Key saved (ends …'+saved.slice(-4)+')';st.className='api-status ok';}
   else{st.textContent='No key saved';st.className='api-status warn';}
+  const wpSt=document.getElementById('wpStatus');
+  if(localStorage.getItem('wn_wp_user')&&localStorage.getItem('wn_wp_pass')){wpSt.textContent='✓ WordPress credentials saved';wpSt.className='api-status ok';}
+  else{wpSt.textContent='Not configured';wpSt.className='api-status warn';}
   document.getElementById('settingsModal').style.display='flex';
 }
 function closeSettings(){document.getElementById('settingsModal').style.display='none';}
-function saveApiKey(){
-  const val=document.getElementById('apiKeyInput').value.trim();
-  if(!val){showToast('Enter an API key first',true);return;}
-  if(!val.startsWith('sk-ant-')){showToast('Key should start with sk-ant-',true);return;}
-  localStorage.setItem('wn_api_key',val);
-  showToast('✓ API key saved! AI analysis enabled.');
+function saveAllSettings(){
+  const apiKey=document.getElementById('apiKeyInput').value.trim();
+  const wpUser=document.getElementById('wpUserInput').value.trim();
+  const wpPass=document.getElementById('wpPassInput').value.trim();
+  if(apiKey){
+    if(!apiKey.startsWith('sk-ant-')){showToast('Anthropic key should start with sk-ant-',true);return;}
+    localStorage.setItem('wn_api_key',apiKey);
+  }
+  if(wpUser)localStorage.setItem('wn_wp_user',wpUser);
+  if(wpPass)localStorage.setItem('wn_wp_pass',wpPass);
+  showToast('✓ Settings saved!');
   setTimeout(closeSettings,600);
 }
-function clearApiKey(){
-  localStorage.removeItem('wn_api_key');
+function clearAllSettings(){
+  localStorage.removeItem('wn_api_key');localStorage.removeItem('wn_wp_user');localStorage.removeItem('wn_wp_pass');
   document.getElementById('apiKeyInput').value='';
-  document.getElementById('apiKeyStatus').textContent='No key saved';
-  document.getElementById('apiKeyStatus').className='api-status warn';
-  showToast('API key cleared.');
+  document.getElementById('wpUserInput').value='';
+  document.getElementById('wpPassInput').value='';
+  showToast('All settings cleared.');
 }
+function saveApiKey(){saveAllSettings();}
+function clearApiKey(){clearAllSettings();}
 function getApiKey(){return localStorage.getItem('wn_api_key')||'';}
+function getWpUser(){return localStorage.getItem('wn_wp_user')||'';}
+function getWpPass(){return localStorage.getItem('wn_wp_pass')||'';}
+
+// ── AUTO UPDATE WORDPRESS PAGE ─────────────────────────────────────────────
+async function autoUpdatePage(i){
+  const p=actionPages[i];
+  if(!p)return;
+  const wpUser=getWpUser(),wpPass=getWpPass(),apiKey=getApiKey();
+  if(!wpUser||!wpPass){showToast('Add WordPress credentials in ⚙ Settings first',true);return;}
+  if(!apiKey){showToast('Add Anthropic API key in ⚙ Settings first',true);return;}
+
+  const wpBtn=document.getElementById('wp-btn-'+i);
+  const updateDiv=document.getElementById('wp-update-'+i);
+  wpBtn.disabled=true;wpBtn.textContent='Updating…';
+  updateDiv.style.display='block';
+  updateDiv.innerHTML=`<div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace">⏳ Step 1/4: Finding page in WordPress…</div>`;
+
+  const keyword=urlToKeyword(p.url);
+  const slug=p.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/+$/,'').split('/').pop()||'';
+  const wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
+  const authHeader='Basic '+btoa(wpUser+':'+wpPass);
+
+  try{
+    // STEP 1 — find the post/page by slug
+    updateDiv.innerHTML=`<div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace">⏳ Step 1/4: Finding page in WordPress…</div>`;
+    let postId=null,postType=null,currentContent='',currentTitle='';
+    for(const pt of ['pages','posts']){
+      const r=await fetch(`${wpBase}/${pt}?slug=${slug}&_fields=id,title,content`,{headers:{Authorization:authHeader}});
+      const items=await r.json();
+      if(Array.isArray(items)&&items.length>0){
+        postId=items[0].id;postType=pt;
+        currentContent=items[0].content?.rendered||'';
+        currentTitle=items[0].title?.rendered||'';
+        break;
+      }
+    }
+    if(!postId){throw new Error('Page not found in WordPress. Check the slug: '+slug);}
+    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace">✓ Found: "${currentTitle}" (ID: ${postId})</div>`;
+
+    // STEP 2 — fetch competitor content via AI
+    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:6px">⏳ Step 2/4: AI analyzing competitors and writing improved content… (30–60 sec)</div>`;
+    const notesWrap=document.getElementById('ai-notes-'+i);
+    const existingAnalysis=notesWrap?.innerText||'';
+
+    const writePrompt=`You are a senior SEO content writer for Wildnet Technologies, an India-based digital marketing agency.
+
+PAGE URL: ${p.url}
+MAIN KEYWORD: "${keyword}"
+CURRENT PAGE TITLE: "${currentTitle}"
+CLICK DROP: ${p.lastW} → ${p.thisW} clicks (lost ${p.drop} clicks)
+
+CURRENT PAGE CONTENT (HTML):
+${currentContent.substring(0,3000)}
+
+PREVIOUS ANALYSIS:
+${existingAnalysis}
+
+TASK:
+1. Use web_search to find the top 3 pages ranking for "${keyword}"
+2. Read what those competitors cover that this page is missing
+3. Write IMPROVED content for this page that:
+   - Keeps the same general structure but enhances it
+   - Adds missing sections competitors have (FAQs, how-it-works, benefits, etc.)
+   - Uses the keyword naturally throughout
+   - Adds proper H2/H3 headings
+   - Is written for an Indian digital marketing agency audience
+   - Professional tone, no fluff
+   - 800-1200 words minimum
+
+Return ONLY this JSON (no markdown, no backticks):
+{
+  "new_title": "Improved SEO page title (50-60 chars)",
+  "new_content": "Full improved HTML content with proper H2/H3 tags, paragraphs, and if relevant an FAQ section at the end",
+  "changes_made": ["List of specific improvements made", "e.g. Added FAQ section", "Added benefits section"]
+}`;
+
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,tools:[{"type":"web_search_20250305","name":"web_search"}],messages:[{role:'user',content:writePrompt}]})
+    });
+    const data=await res.json();
+    if(data.error)throw new Error(data.error.message);
+
+    // agentic loop
+    let raw='';let loopData=data;let loopMsgs=[{role:'user',content:writePrompt}];
+    for(let r=0;r<5;r++){
+      const blocks=loopData.content||[];
+      const texts=blocks.filter(b=>b.type==='text').map(b=>b.text).join('');
+      if(texts&&(loopData.stop_reason==='end_turn'||loopData.stop_reason==='max_tokens')){raw=texts;break;}
+      if(loopData.stop_reason==='tool_use'){
+        updateDiv.querySelector('div:last-child').textContent='⏳ Step 2/4: Reading competitor pages…';
+        loopMsgs.push({role:'assistant',content:blocks});
+        const tr=blocks.filter(b=>b.type==='tool_use').map(b=>({type:'tool_result',tool_use_id:b.id,content:'Search complete.'}));
+        loopMsgs.push({role:'user',content:tr});
+        const r2=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,tools:[{"type":"web_search_20250305","name":"web_search"}],messages:loopMsgs})});
+        loopData=await r2.json();
+        if(loopData.error)throw new Error(loopData.error.message);
+      }else{raw=texts;break;}
+    }
+    if(!raw)throw new Error('Empty response from AI');
+    let jsonStr=raw.trim().replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim();
+    const s=jsonStr.indexOf('{'),e=jsonStr.lastIndexOf('}');
+    if(s===-1||e===-1)throw new Error('No JSON in AI response');
+    const improved=JSON.parse(jsonStr.slice(s,e+1));
+    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace">✓ AI wrote improved content (${(improved.new_content||'').length} chars)</div>`;
+
+    // STEP 3 — preview before publishing
+    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:6px">⏳ Step 3/4: Ready to publish — review changes below</div>`;
+    updateDiv.innerHTML+=`<div style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11px;line-height:1.7">
+      <div style="font-weight:700;color:#a78bfa;margin-bottom:6px">📝 Changes AI will make:</div>
+      <div style="color:var(--text)"><strong>New Title:</strong> ${improved.new_title||currentTitle}</div>
+      <div style="margin-top:6px;color:var(--muted)">${(improved.changes_made||[]).map(c=>`✓ ${c}`).join('<br>')}</div>
+    </div>`;
+    updateDiv.innerHTML+=`<div style="display:flex;gap:8px;margin-top:10px">
+      <button onclick="publishToWP(${i},'${postType}',${postId})" id="publish-btn-${i}" style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer">✅ Publish to WordPress</button>
+      <button onclick="document.getElementById('wp-update-${i}').style.display='none'" style="background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-family:'Syne',sans-serif;font-size:12px;cursor:pointer">Cancel</button>
+    </div>`;
+
+    // store improved content for publish step
+    window._wpImproved=window._wpImproved||{};
+    window._wpImproved[i]={title:improved.new_title,content:improved.new_content};
+    wpBtn.disabled=false;wpBtn.textContent='🚀 Auto-Update Page on WordPress';
+
+  }catch(e){
+    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--red);font-family:'JetBrains Mono',monospace;margin-top:6px">❌ Error: ${e.message}</div>`;
+    wpBtn.disabled=false;wpBtn.textContent='🚀 Auto-Update Page on WordPress';
+  }
+}
+
+async function publishToWP(i,postType,postId){
+  const wpUser=getWpUser(),wpPass=getWpPass();
+  const improved=window._wpImproved&&window._wpImproved[i];
+  if(!improved)return;
+  const publishBtn=document.getElementById('publish-btn-'+i);
+  publishBtn.disabled=true;publishBtn.textContent='Publishing…';
+  const updateDiv=document.getElementById('wp-update-'+i);
+  try{
+    const wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
+    const authHeader='Basic '+btoa(wpUser+':'+wpPass);
+    const body={content:improved.content};
+    if(improved.title)body.title=improved.title;
+    const r=await fetch(`${wpBase}/${postType}/${postId}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:authHeader},
+      body:JSON.stringify(body)
+    });
+    const result=await r.json();
+    if(result.id){
+      updateDiv.innerHTML+=`<div style="font-size:12px;color:var(--green);font-family:'JetBrains Mono',monospace;margin-top:8px;font-weight:700">🎉 Page updated successfully! <a href="${result.link}" target="_blank" style="color:var(--accent)">View live page →</a></div>`;
+      showToast('✅ Page updated on WordPress!');
+    }else{
+      throw new Error(result.message||'Update failed');
+    }
+  }catch(e){
+    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--red);margin-top:6px">❌ Publish failed: ${e.message}</div>`;
+    publishBtn.disabled=false;publishBtn.textContent='✅ Publish to WordPress';
+  }
+}
 
 function filterTable(){
   const q=document.getElementById('searchBox').value.toLowerCase();
