@@ -1040,28 +1040,26 @@ async function autoUpdatePage(i){
 
   const wpBtn=document.getElementById('wp-btn-'+i);
   const updateDiv=document.getElementById('wp-update-'+i);
-  wpBtn.disabled=true;wpBtn.textContent='Updating…';
+  wpBtn.disabled=true; wpBtn.textContent='Updating…';
 
-  // Force show the update div with high visibility
-  updateDiv.style.cssText='display:block!important;margin-top:12px;border:2px solid #22c55e;border-radius:10px;padding:14px;background:rgba(34,197,94,0.06)';
-  updateDiv.innerHTML=`<div style="font-size:12px;color:#22c55e;font-family:'JetBrains Mono',monospace;font-weight:700">🔄 Auto-Update Started…</div>
-  <div id="wp-steps-${i}" style="margin-top:8px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;line-height:2"></div>`;
+  // Show update panel
+  updateDiv.style.cssText='display:block!important;margin-top:16px;border:2px solid #22c55e;border-radius:12px;padding:16px;background:rgba(34,197,94,0.05)';
+  updateDiv.innerHTML='<div style="font-size:13px;font-weight:700;color:#22c55e;margin-bottom:10px">🔄 Auto-Update in Progress</div><div id="wp-log-'+i+'" style="font-size:11px;font-family:JetBrains Mono,monospace;line-height:2.2;color:var(--muted)"></div>';
+  updateDiv.scrollIntoView({behavior:'smooth',block:'start'});
+
+  const log=(msg,color)=>{
+    const d=document.getElementById('wp-log-'+i);
+    if(d){const s=document.createElement('div');s.textContent=msg;s.style.color=color||'var(--muted)';d.appendChild(s);}
+  };
 
   const keyword=urlToKeyword(p.url);
   const slug=p.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/+$/,'').split('/').pop()||'';
   const wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
   const authHeader='Basic '+btoa(wpUser+':'+wpPass);
 
-  const addStep=(msg,color='var(--muted)')=>{
-    const stepsDiv=document.getElementById('wp-steps-'+i);
-    if(stepsDiv){const d=document.createElement('div');d.style.color=color;d.textContent=msg;stepsDiv.appendChild(d);}
-    // scroll into view
-    updateDiv.scrollIntoView({behavior:'smooth',block:'nearest'});
-  };
-
   try{
     // STEP 1 — find the post/page by slug
-    addStep('⏳ Step 1/4: Finding page in WordPress…');
+    log('⏳ Step 1: Finding page in WordPress…');
     let postId=null,postType=null,currentContent='',currentTitle='';
     for(const pt of ['pages','posts']){
       const r=await fetch(`${wpBase}/${pt}?slug=${slug}&_fields=id,title,content`,{headers:{Authorization:authHeader}});
@@ -1074,10 +1072,10 @@ async function autoUpdatePage(i){
       }
     }
     if(!postId){throw new Error('Page not found in WordPress. Check the slug: '+slug);}
-    addStep('✓ Found: "'+currentTitle+'" (ID: '+postId+')', 'var(--green)');
+    log('✓ Found: "'+currentTitle+'" (ID: '+postId+')','#22c55e');
 
     // STEP 2 — fetch competitor content via AI
-    addStep('⏳ Step 2/4: AI writing improved content… (30-60 sec)');
+    log('⏳ Step 2: AI searching competitors & writing improved content… (30-60s)');
     const notesWrap=document.getElementById('ai-notes-'+i);
     const existingAnalysis=notesWrap?.innerText||'';
 
@@ -1128,7 +1126,7 @@ Return ONLY this JSON (no markdown, no backticks):
       const texts=blocks.filter(b=>b.type==='text').map(b=>b.text).join('');
       if(texts&&(loopData.stop_reason==='end_turn'||loopData.stop_reason==='max_tokens')){raw=texts;break;}
       if(loopData.stop_reason==='tool_use'){
-        addStep('⏳ Reading competitor pages…');
+        log('⏳ Reading competitor pages from Google…');
         loopMsgs.push({role:'assistant',content:blocks});
         const tr=blocks.filter(b=>b.type==='tool_use').map(b=>({type:'tool_result',tool_use_id:b.id,content:'Search complete.'}));
         loopMsgs.push({role:'user',content:tr});
@@ -1142,23 +1140,75 @@ Return ONLY this JSON (no markdown, no backticks):
     const s=jsonStr.indexOf('{'),e=jsonStr.lastIndexOf('}');
     if(s===-1||e===-1)throw new Error('No JSON in AI response');
     const improved=JSON.parse(jsonStr.slice(s,e+1));
-    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace">✓ AI wrote improved content (${(improved.new_content||'').length} chars)</div>`;
+    log('✓ AI wrote improved content ('+((improved.new_content||'').length)+' chars)','#22c55e');
 
     // STEP 3 — preview before publishing
-    addStep('⏳ Step 3/4: Ready to publish — review below');
-    updateDiv.innerHTML+=`<div style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11px;line-height:1.7">
-      <div style="font-weight:700;color:#a78bfa;margin-bottom:6px">📝 Changes AI will make:</div>
-      <div style="color:var(--text)"><strong>New Title:</strong> ${improved.new_title||currentTitle}</div>
-      <div style="margin-top:6px;color:var(--muted)">${(improved.changes_made||[]).map(c=>`✓ ${c}`).join('<br>')}</div>
-    </div>`;
-    updateDiv.innerHTML+=`<div style="display:flex;gap:8px;margin-top:10px">
-      <button onclick="publishToWP(${i},'${postType}',${postId})" id="publish-btn-${i}" style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer">✅ Publish to WordPress</button>
-      <button onclick="document.getElementById('wp-update-${i}').style.display='none'" style="background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-family:'Syne',sans-serif;font-size:12px;cursor:pointer">Cancel</button>
-    </div>`;
+    log('✓ Content ready — review & edit below','#22c55e');
 
     // store improved content for publish step
     window._wpImproved=window._wpImproved||{};
     window._wpImproved[i]={title:improved.new_title,content:improved.new_content};
+
+    // Build editable preview panel using DOM (avoids all quoting issues)
+    const previewDiv=document.createElement('div');
+    previewDiv.style.cssText='margin-top:14px;padding-top:12px;border-top:1px solid var(--border)';
+
+    // Title
+    const titleLabel=document.createElement('div');
+    titleLabel.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
+    titleLabel.textContent='New Page Title';
+    const titleInput=document.createElement('input');
+    titleInput.id='edit-title-'+i;
+    titleInput.value=improved.new_title||currentTitle;
+    titleInput.style.cssText='width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:12px;outline:none;margin-bottom:12px;box-sizing:border-box';
+
+    // Changes list
+    const changesLabel=document.createElement('div');
+    changesLabel.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
+    changesLabel.textContent='What AI Improved';
+    const changesList=document.createElement('div');
+    changesList.style.cssText='margin-bottom:12px;font-size:11px;line-height:1.8';
+    (improved.changes_made||[]).forEach(c=>{const d=document.createElement('div');d.style.color='var(--green)';d.textContent='✓ '+c;changesList.appendChild(d);});
+
+    // Content textarea
+    const contentLabel=document.createElement('div');
+    contentLabel.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
+    contentLabel.textContent='New Content (editable HTML)';
+    const contentArea=document.createElement('textarea');
+    contentArea.id='edit-content-'+i;
+    contentArea.value=improved.new_content||'';
+    contentArea.style.cssText='width:100%;min-height:220px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:11px;font-family:JetBrains Mono,monospace;resize:vertical;outline:none;line-height:1.6;box-sizing:border-box;margin-bottom:12px';
+
+    // Buttons
+    const btnRow=document.createElement('div');
+    btnRow.style.cssText='display:flex;gap:8px';
+    const publishBtn=document.createElement('button');
+    publishBtn.id='publish-btn-'+i;
+    publishBtn.textContent='✅ Publish to WordPress';
+    publishBtn.style.cssText='background:#22c55e;color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:Syne,sans-serif;font-size:13px;font-weight:700;cursor:pointer';
+    publishBtn.onclick=()=>publishToWP(i,postType,postId);
+    const cancelBtn=document.createElement('button');
+    cancelBtn.textContent='✕ Cancel';
+    cancelBtn.style.cssText='background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-family:Syne,sans-serif;font-size:12px;cursor:pointer';
+    cancelBtn.onclick=()=>{updateDiv.style.display='none';};
+    btnRow.appendChild(publishBtn);
+    btnRow.appendChild(cancelBtn);
+
+    // Header
+    const heading=document.createElement('div');
+    heading.style.cssText='font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:12px';
+    heading.textContent='📝 Review & Edit Before Publishing';
+
+    previewDiv.appendChild(heading);
+    previewDiv.appendChild(titleLabel);
+    previewDiv.appendChild(titleInput);
+    previewDiv.appendChild(changesLabel);
+    previewDiv.appendChild(changesList);
+    previewDiv.appendChild(contentLabel);
+    previewDiv.appendChild(contentArea);
+    previewDiv.appendChild(btnRow);
+    updateDiv.appendChild(previewDiv);
+    previewDiv.scrollIntoView({behavior:'smooth',block:'start'});
     wpBtn.disabled=false;wpBtn.textContent='🚀 Auto-Update Page on WordPress';
 
   }catch(e){
@@ -1171,14 +1221,19 @@ async function publishToWP(i,postType,postId){
   const wpUser=getWpUser(),wpPass=getWpPass();
   const improved=window._wpImproved&&window._wpImproved[i];
   if(!improved)return;
+  // Read from editable fields
+  const editTitle=document.getElementById('edit-title-'+i);
+  const editContent=document.getElementById('edit-content-'+i);
+  const finalTitle=editTitle?editTitle.value:improved.title;
+  const finalContent=editContent?editContent.value.replace(/&lt;/g,'<').replace(/&gt;/g,'>'):improved.content;
   const publishBtn=document.getElementById('publish-btn-'+i);
   publishBtn.disabled=true;publishBtn.textContent='Publishing…';
   const updateDiv=document.getElementById('wp-update-'+i);
   try{
     const wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
     const authHeader='Basic '+btoa(wpUser+':'+wpPass);
-    const body={content:improved.content};
-    if(improved.title)body.title=improved.title;
+    const body={content:finalContent};
+    if(finalTitle)body.title=finalTitle;
     const r=await fetch(`${wpBase}/${postType}/${postId}`,{
       method:'POST',
       headers:{'Content-Type':'application/json',Authorization:authHeader},
