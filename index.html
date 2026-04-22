@@ -1035,220 +1035,226 @@ async function autoUpdatePage(i){
   const p=actionPages[i];
   if(!p)return;
   const wpUser=getWpUser(),wpPass=getWpPass(),apiKey=getApiKey();
-  if(!wpUser||!wpPass){showToast('Add WordPress credentials in ⚙ Settings first',true);openSettings();return;}
-  if(!apiKey){showToast('Add Anthropic API key in ⚙ Settings first',true);openSettings();return;}
+  if(!wpUser||!wpPass){showToast('Add WordPress credentials in Settings first',true);openSettings();return;}
+  if(!apiKey){showToast('Add Anthropic API key in Settings first',true);openSettings();return;}
 
   const wpBtn=document.getElementById('wp-btn-'+i);
   const updateDiv=document.getElementById('wp-update-'+i);
-  wpBtn.disabled=true; wpBtn.textContent='Updating…';
-
-  // Show update panel
+  wpBtn.disabled=true;wpBtn.textContent='Updating…';
   updateDiv.style.cssText='display:block!important;margin-top:16px;border:2px solid #22c55e;border-radius:12px;padding:16px;background:rgba(34,197,94,0.05)';
-  updateDiv.innerHTML='<div style="font-size:13px;font-weight:700;color:#22c55e;margin-bottom:10px">🔄 Auto-Update in Progress</div><div id="wp-log-'+i+'" style="font-size:11px;font-family:JetBrains Mono,monospace;line-height:2.2;color:var(--muted)"></div>';
+  updateDiv.innerHTML='<div style="font-size:13px;font-weight:700;color:#22c55e;margin-bottom:10px">🔄 Auto-Update in Progress</div><div id="wplog'+i+'"></div>';
   updateDiv.scrollIntoView({behavior:'smooth',block:'start'});
 
-  const log=(msg,color)=>{
-    const d=document.getElementById('wp-log-'+i);
-    if(d){const s=document.createElement('div');s.textContent=msg;s.style.color=color||'var(--muted)';d.appendChild(s);}
-  };
+  function log(msg,col){
+    var d=document.getElementById('wplog'+i);
+    if(!d)return;
+    var s=document.createElement('div');
+    s.textContent=msg;
+    s.style.cssText='font-size:11px;font-family:JetBrains Mono,monospace;line-height:2;color:'+(col||'var(--muted)');
+    d.appendChild(s);
+  }
 
-  const keyword=urlToKeyword(p.url);
-  const slug=p.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/+$/,'').split('/').pop()||'';
-  const wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
-  const authHeader='Basic '+btoa(wpUser+':'+wpPass);
+  var keyword=urlToKeyword(p.url);
+  var slug=p.url.replace(/^https?:\/\/[^\/]+/,'').replace(/\/+$/,'').split('/').pop()||'';
+  var wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
+  var auth='Basic '+btoa(wpUser+':'+wpPass);
+  var postId=null,postType=null,currentContent='',currentTitle='';
 
   try{
-    // STEP 1 — find the post/page by slug
-    log('⏳ Step 1: Finding page in WordPress…');
-    let postId=null,postType=null,currentContent='',currentTitle='';
-    for(const pt of ['pages','posts']){
-      const r=await fetch(`${wpBase}/${pt}?slug=${slug}&_fields=id,title,content`,{headers:{Authorization:authHeader}});
-      const items=await r.json();
+    // STEP 1: Find page in WordPress
+    log('⏳ Finding page in WordPress…');
+    for(var pt of ['posts','pages']){
+      var r=await fetch(wpBase+'/'+pt+'?slug='+encodeURIComponent(slug)+'&_fields=id,title,content',{headers:{Authorization:auth}});
+      var items=await r.json();
       if(Array.isArray(items)&&items.length>0){
         postId=items[0].id;postType=pt;
-        currentContent=items[0].content?.rendered||'';
-        currentTitle=items[0].title?.rendered||'';
+        currentContent=items[0].content&&items[0].content.rendered||'';
+        currentTitle=items[0].title&&items[0].title.rendered||'';
         break;
       }
     }
-    if(!postId){throw new Error('Page not found in WordPress. Check the slug: '+slug);}
+    if(!postId){
+      // try custom post types
+      var r2=await fetch(wpBase+'/posts?search='+encodeURIComponent(keyword)+'&_fields=id,title,content&per_page=5',{headers:{Authorization:auth}});
+      var items2=await r2.json();
+      if(Array.isArray(items2)&&items2.length>0){
+        postId=items2[0].id;postType='posts';
+        currentContent=items2[0].content&&items2[0].content.rendered||'';
+        currentTitle=items2[0].title&&items2[0].title.rendered||'';
+      }
+    }
+    if(!postId)throw new Error('Page not found in WordPress for slug: '+slug);
     log('✓ Found: "'+currentTitle+'" (ID: '+postId+')','#22c55e');
 
-    // STEP 2 — fetch competitor content via AI
-    log('⏳ Step 2: AI searching competitors & writing improved content… (30-60s)');
-    const notesWrap=document.getElementById('ai-notes-'+i);
-    const existingAnalysis=notesWrap?.innerText||'';
-
-    const writePrompt='You are an SEO content writer. Search Google for the top 3 pages ranking for "'+keyword+'" then write improved HTML content for this page.\n\nPAGE: '+p.url+'\nCURRENT TITLE: '+currentTitle+'\n\nIMPORTANT: Your ENTIRE response must be ONLY a JSON object. No explanation, no markdown, no text before or after. Start with { and end with }.\n\nJSON format:\n{"new_title":"improved title here","new_content":"full HTML content here with h2 h3 tags and FAQ section","changes_made":["improvement 1","improvement 2","improvement 3"]}';
-
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
+    // STEP 2: Search competitors
+    log('⏳ Searching top competitors on Google…');
+    var searchPrompt='Search Google for the keyword: '+keyword+'. List the top 5 ranking page URLs and summarize what content each page covers. Focus on: headings used, topics covered, FAQs included, word count estimate.';
+    var searchResp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,tools:[{"type":"web_search_20250305","name":"web_search"}],messages:[{role:'user',content:writePrompt}]})
+      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:2000,tools:[{type:'web_search_20250305',name:'web_search'}],messages:[{role:'user',content:searchPrompt}]})
     });
-    const data=await res.json();
-    if(data.error)throw new Error(data.error.message);
+    var sd=await searchResp.json();
+    if(sd.error)throw new Error('Search API error: '+sd.error.message);
 
-    // agentic loop
-    let raw='';let loopData=data;let loopMsgs=[{role:'user',content:writePrompt}];
-    for(let r=0;r<5;r++){
-      const blocks=loopData.content||[];
-      const texts=blocks.filter(b=>b.type==='text').map(b=>b.text).join('');
-      if(texts&&(loopData.stop_reason==='end_turn'||loopData.stop_reason==='max_tokens')){raw=texts;break;}
-      if(loopData.stop_reason==='tool_use'){
-        log('⏳ Reading competitor pages from Google…');
-        loopMsgs.push({role:'assistant',content:blocks});
-        const tr=blocks.filter(b=>b.type==='tool_use').map(b=>({type:'tool_result',tool_use_id:b.id,content:'Search complete.'}));
-        loopMsgs.push({role:'user',content:tr});
-        const r2=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,tools:[{"type":"web_search_20250305","name":"web_search"}],messages:loopMsgs})});
-        loopData=await r2.json();
-        if(loopData.error)throw new Error(loopData.error.message);
-      }else{raw=texts;break;}
+    var competitorInfo='';
+    var smsgs=[{role:'user',content:searchPrompt}];
+    for(var round=0;round<5;round++){
+      var blocks=sd.content||[];
+      var txt=blocks.filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
+      if(sd.stop_reason==='end_turn'||sd.stop_reason==='max_tokens'){competitorInfo=txt;break;}
+      if(sd.stop_reason==='tool_use'){
+        log('⏳ Reading competitor pages…');
+        smsgs.push({role:'assistant',content:blocks});
+        var tr=blocks.filter(function(b){return b.type==='tool_use';}).map(function(b){return{type:'tool_result',tool_use_id:b.id,content:'Search executed.'};});
+        smsgs.push({role:'user',content:tr});
+        var sr2=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:2000,tools:[{type:'web_search_20250305',name:'web_search'}],messages:smsgs})});
+        sd=await sr2.json();
+        if(sd.error)throw new Error('Search loop error: '+sd.error.message);
+      }else{competitorInfo=txt;break;}
     }
-    if(!raw)throw new Error('Empty response from AI');
-    // Strip markdown/extra text robustly
-    let jsonStr=raw.trim();
-    jsonStr=jsonStr.replace(/```json/g,'').replace(/```/g,'').trim();
-    const s=jsonStr.indexOf('{'),e=jsonStr.lastIndexOf('}');
-    if(s===-1||e===-1){
-      // AI didn't return JSON — build a basic response from the raw text
-      const improved={new_title:currentTitle,new_content:'<p>'+raw.replace(/\n/g,'</p><p>')+'</p>',changes_made:['AI rewrote content based on competitor analysis']};
-      window._wpImproved=window._wpImproved||{};
-      window._wpImproved[i]=improved;
-      log('⚠ AI returned plain text — using as content','#f59e0b');
-      // skip to preview
-      const previewDiv2=document.createElement('div');
-      previewDiv2.id='preview-fallback-'+i;
-      const titleInput2=document.createElement('input');
-      titleInput2.id='edit-title-'+i;titleInput2.value=currentTitle;
-      titleInput2.style.cssText='width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:12px;outline:none;margin:8px 0;box-sizing:border-box';
-      const contentArea2=document.createElement('textarea');
-      contentArea2.id='edit-content-'+i;contentArea2.value=raw;
-      contentArea2.style.cssText='width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:11px;font-family:JetBrains Mono,monospace;resize:vertical;outline:none;box-sizing:border-box;margin:8px 0';
-      const pbtn=document.createElement('button');
-      pbtn.id='publish-btn-'+i;pbtn.textContent='✅ Publish to WordPress';
-      pbtn.style.cssText='background:#22c55e;color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:Syne,sans-serif;font-size:13px;font-weight:700;cursor:pointer';
-      pbtn.onclick=()=>publishToWP(i,postType,postId);
-      previewDiv2.appendChild(titleInput2);previewDiv2.appendChild(contentArea2);previewDiv2.appendChild(pbtn);
-      updateDiv.appendChild(previewDiv2);
-      previewDiv2.scrollIntoView({behavior:'smooth',block:'start'});
-      wpBtn.disabled=false;wpBtn.textContent='🚀 Auto-Update Page on WordPress';
-      return;
-    }
-    let improved;
-    try{ improved=JSON.parse(jsonStr.slice(s,e+1)); }
-    catch(parseErr){
-      improved={new_title:currentTitle,new_content:raw,changes_made:['AI rewrote content']};
-    }
-    log('✓ AI wrote improved content ('+((improved.new_content||'').length)+' chars)','#22c55e');
+    if(!competitorInfo)competitorInfo='Competitor data unavailable.';
+    log('✓ Competitor research complete','#22c55e');
 
-    // STEP 3 — preview before publishing
-    log('✓ Content ready — review & edit below','#22c55e');
+    // STEP 3: Write improved content (NO tools — pure text response)
+    log('⏳ AI writing improved content based on competitor analysis…');
+    var writePrompt='You are an SEO writer for Wildnet Technologies India.\nKEYWORD: '+keyword+'\nCURRENT TITLE: '+currentTitle+'\nCURRENT CONTENT: '+currentContent.substring(0,1500)+'\nCOMPETITOR ANALYSIS: '+competitorInfo+'\n\nWrite improved HTML content for this page. Respond with ONLY this JSON (no other text):{"new_title":"title","new_content":"html content","changes_made":["change1","change2"]}  Start your response with { and end with }';
 
-    // store improved content for publish step
+    var writeResp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,messages:[{role:'user',content:writePrompt}]})
+    });
+    var wd=await writeResp.json();
+    if(wd.error)throw new Error('Write API error: '+wd.error.message);
+    var rawText=(wd.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').trim();
+    if(!rawText)throw new Error('Empty response from AI writer');
+    log('✓ AI finished writing','#22c55e');
+
+    // Parse JSON — very robustly
+    var improved;
+    try{
+      var clean=rawText.replace(/```json/g,'').replace(/```/g,'').trim();
+      var si=clean.indexOf('{'),ei=clean.lastIndexOf('}');
+      if(si===-1||ei===-1)throw new Error('no braces');
+      improved=JSON.parse(clean.slice(si,ei+1));
+    }catch(pe){
+      // fallback: use raw text as content
+      improved={new_title:currentTitle,new_content:rawText,changes_made:['AI rewrote content based on competitor research']};
+      log('⚠ Used plain text fallback','#f59e0b');
+    }
+
+    // Store for publish
     window._wpImproved=window._wpImproved||{};
-    window._wpImproved[i]={title:improved.new_title,content:improved.new_content};
+    window._wpImproved[i]={title:improved.new_title||currentTitle,content:improved.new_content||rawText};
 
-    // Build editable preview panel using DOM (avoids all quoting issues)
-    const previewDiv=document.createElement('div');
-    previewDiv.style.cssText='margin-top:14px;padding-top:12px;border-top:1px solid var(--border)';
+    // STEP 4: Show editable preview
+    log('✓ Ready — review below before publishing','#22c55e');
+    var prev=document.createElement('div');
+    prev.style.cssText='margin-top:14px;padding-top:12px;border-top:1px solid var(--border)';
 
-    // Title
-    const titleLabel=document.createElement('div');
-    titleLabel.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
-    titleLabel.textContent='New Page Title';
-    const titleInput=document.createElement('input');
-    titleInput.id='edit-title-'+i;
-    titleInput.value=improved.new_title||currentTitle;
-    titleInput.style.cssText='width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:12px;outline:none;margin-bottom:12px;box-sizing:border-box';
+    var h=document.createElement('div');
+    h.style.cssText='font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:12px';
+    h.textContent='📝 Review & Edit Before Publishing';
+    prev.appendChild(h);
 
-    // Changes list
-    const changesLabel=document.createElement('div');
-    changesLabel.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
-    changesLabel.textContent='What AI Improved';
-    const changesList=document.createElement('div');
-    changesList.style.cssText='margin-bottom:12px;font-size:11px;line-height:1.8';
-    (improved.changes_made||[]).forEach(c=>{const d=document.createElement('div');d.style.color='var(--green)';d.textContent='✓ '+c;changesList.appendChild(d);});
+    var tl=document.createElement('div');
+    tl.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
+    tl.textContent='New Page Title';
+    prev.appendChild(tl);
 
-    // Content textarea
-    const contentLabel=document.createElement('div');
-    contentLabel.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
-    contentLabel.textContent='New Content (editable HTML)';
-    const contentArea=document.createElement('textarea');
-    contentArea.id='edit-content-'+i;
-    contentArea.value=improved.new_content||'';
-    contentArea.style.cssText='width:100%;min-height:220px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:11px;font-family:JetBrains Mono,monospace;resize:vertical;outline:none;line-height:1.6;box-sizing:border-box;margin-bottom:12px';
+    var ti=document.createElement('input');
+    ti.id='edit-title-'+i;
+    ti.value=improved.new_title||currentTitle;
+    ti.style.cssText='width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:12px;outline:none;margin-bottom:12px;box-sizing:border-box';
+    prev.appendChild(ti);
 
-    // Buttons
-    const btnRow=document.createElement('div');
-    btnRow.style.cssText='display:flex;gap:8px';
-    const publishBtn=document.createElement('button');
-    publishBtn.id='publish-btn-'+i;
-    publishBtn.textContent='✅ Publish to WordPress';
-    publishBtn.style.cssText='background:#22c55e;color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:Syne,sans-serif;font-size:13px;font-weight:700;cursor:pointer';
-    publishBtn.onclick=()=>publishToWP(i,postType,postId);
-    const cancelBtn=document.createElement('button');
-    cancelBtn.textContent='✕ Cancel';
-    cancelBtn.style.cssText='background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-family:Syne,sans-serif;font-size:12px;cursor:pointer';
-    cancelBtn.onclick=()=>{updateDiv.style.display='none';};
-    btnRow.appendChild(publishBtn);
-    btnRow.appendChild(cancelBtn);
+    if(improved.changes_made&&improved.changes_made.length){
+      var cl=document.createElement('div');
+      cl.style.cssText='margin-bottom:10px';
+      var cll=document.createElement('div');
+      cll.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
+      cll.textContent='Improvements Made';
+      cl.appendChild(cll);
+      improved.changes_made.forEach(function(c){var d=document.createElement('div');d.style.cssText='font-size:11px;color:var(--green);line-height:1.8';d.textContent='✓ '+c;cl.appendChild(d);});
+      prev.appendChild(cl);
+    }
 
-    // Header
-    const heading=document.createElement('div');
-    heading.style.cssText='font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:12px';
-    heading.textContent='📝 Review & Edit Before Publishing';
+    var ctl=document.createElement('div');
+    ctl.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
+    ctl.textContent='New Content (editable HTML)';
+    prev.appendChild(ctl);
 
-    previewDiv.appendChild(heading);
-    previewDiv.appendChild(titleLabel);
-    previewDiv.appendChild(titleInput);
-    previewDiv.appendChild(changesLabel);
-    previewDiv.appendChild(changesList);
-    previewDiv.appendChild(contentLabel);
-    previewDiv.appendChild(contentArea);
-    previewDiv.appendChild(btnRow);
-    updateDiv.appendChild(previewDiv);
-    previewDiv.scrollIntoView({behavior:'smooth',block:'start'});
-    wpBtn.disabled=false;wpBtn.textContent='🚀 Auto-Update Page on WordPress';
+    var ta=document.createElement('textarea');
+    ta.id='edit-content-'+i;
+    ta.value=improved.new_content||rawText;
+    ta.style.cssText='width:100%;min-height:240px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:11px;font-family:JetBrains Mono,monospace;resize:vertical;outline:none;line-height:1.6;box-sizing:border-box;margin-bottom:12px';
+    prev.appendChild(ta);
 
-  }catch(e){
-    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--red);font-family:'JetBrains Mono',monospace;margin-top:6px">❌ Error: ${e.message}</div>`;
+    var br=document.createElement('div');
+    br.style.cssText='display:flex;gap:8px';
+
+    var pb=document.createElement('button');
+    pb.id='publish-btn-'+i;
+    pb.textContent='✅ Publish to WordPress';
+    pb.style.cssText='background:#22c55e;color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:Syne,sans-serif;font-size:13px;font-weight:700;cursor:pointer';
+    pb.onclick=(function(idx,pt,pid){return function(){publishToWP(idx,pt,pid);};})(i,postType,postId);
+    br.appendChild(pb);
+
+    var cb=document.createElement('button');
+    cb.textContent='✕ Cancel';
+    cb.style.cssText='background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-family:Syne,sans-serif;font-size:12px;cursor:pointer';
+    cb.onclick=function(){updateDiv.style.display='none';};
+    br.appendChild(cb);
+    prev.appendChild(br);
+
+    updateDiv.appendChild(prev);
+    prev.scrollIntoView({behavior:'smooth',block:'start'});
+    wpBtn.disabled=false;wpBtn.textContent='🚀 Re-run Auto-Update';
+
+  }catch(err){
+    log('❌ Error: '+err.message,'var(--red)');
     wpBtn.disabled=false;wpBtn.textContent='🚀 Auto-Update Page on WordPress';
   }
 }
 
 async function publishToWP(i,postType,postId){
-  const wpUser=getWpUser(),wpPass=getWpPass();
-  const improved=window._wpImproved&&window._wpImproved[i];
-  if(!improved)return;
-  // Read from editable fields
-  const editTitle=document.getElementById('edit-title-'+i);
-  const editContent=document.getElementById('edit-content-'+i);
-  const finalTitle=editTitle?editTitle.value:improved.title;
-  const finalContent=editContent?editContent.value.replace(/&lt;/g,'<').replace(/&gt;/g,'>'):improved.content;
-  const publishBtn=document.getElementById('publish-btn-'+i);
-  publishBtn.disabled=true;publishBtn.textContent='Publishing…';
-  const updateDiv=document.getElementById('wp-update-'+i);
+  var wpUser=getWpUser(),wpPass=getWpPass();
+  var ti=document.getElementById('edit-title-'+i);
+  var ta=document.getElementById('edit-content-'+i);
+  var finalTitle=ti?ti.value:'';
+  var finalContent=ta?ta.value:'';
+  if(!finalContent){showToast('No content to publish',true);return;}
+  var pb=document.getElementById('publish-btn-'+i);
+  pb.disabled=true;pb.textContent='Publishing…';
+  var updateDiv=document.getElementById('wp-update-'+i);
   try{
-    const wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
-    const authHeader='Basic '+btoa(wpUser+':'+wpPass);
-    const body={content:finalContent};
+    var wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
+    var auth='Basic '+btoa(wpUser+':'+wpPass);
+    var body={content:finalContent};
     if(finalTitle)body.title=finalTitle;
-    const r=await fetch(`${wpBase}/${postType}/${postId}`,{
+    var r=await fetch(wpBase+'/'+postType+'/'+postId,{
       method:'POST',
-      headers:{'Content-Type':'application/json',Authorization:authHeader},
+      headers:{'Content-Type':'application/json',Authorization:auth},
       body:JSON.stringify(body)
     });
-    const result=await r.json();
+    var result=await r.json();
     if(result.id){
-      updateDiv.innerHTML+=`<div style="font-size:12px;color:var(--green);font-family:'JetBrains Mono',monospace;margin-top:8px;font-weight:700">🎉 Page updated successfully! <a href="${result.link}" target="_blank" style="color:var(--accent)">View live page →</a></div>`;
+      var s=document.createElement('div');
+      s.style.cssText='margin-top:12px;font-size:13px;font-weight:700;color:var(--green)';
+      s.innerHTML='🎉 Published! <a href="'+result.link+'" target="_blank" style="color:var(--accent)">View live page →</a>';
+      updateDiv.appendChild(s);
+      s.scrollIntoView({behavior:'smooth',block:'start'});
       showToast('✅ Page updated on WordPress!');
     }else{
-      throw new Error(result.message||'Update failed');
+      throw new Error(result.message||JSON.stringify(result));
     }
-  }catch(e){
-    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--red);margin-top:6px">❌ Publish failed: ${e.message}</div>`;
-    publishBtn.disabled=false;publishBtn.textContent='✅ Publish to WordPress';
+  }catch(err){
+    var ed=document.createElement('div');
+    ed.style.cssText='margin-top:8px;font-size:12px;color:var(--red)';
+    ed.textContent='❌ Publish failed: '+err.message;
+    updateDiv.appendChild(ed);
+    pb.disabled=false;pb.textContent='✅ Publish to WordPress';
   }
 }
 
