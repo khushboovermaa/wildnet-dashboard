@@ -1079,37 +1079,7 @@ async function autoUpdatePage(i){
     const notesWrap=document.getElementById('ai-notes-'+i);
     const existingAnalysis=notesWrap?.innerText||'';
 
-    const writePrompt=`You are a senior SEO content writer for Wildnet Technologies, an India-based digital marketing agency.
-
-PAGE URL: ${p.url}
-MAIN KEYWORD: "${keyword}"
-CURRENT PAGE TITLE: "${currentTitle}"
-CLICK DROP: ${p.lastW} → ${p.thisW} clicks (lost ${p.drop} clicks)
-
-CURRENT PAGE CONTENT (HTML):
-${currentContent.substring(0,3000)}
-
-PREVIOUS ANALYSIS:
-${existingAnalysis}
-
-TASK:
-1. Use web_search to find the top 3 pages ranking for "${keyword}"
-2. Read what those competitors cover that this page is missing
-3. Write IMPROVED content for this page that:
-   - Keeps the same general structure but enhances it
-   - Adds missing sections competitors have (FAQs, how-it-works, benefits, etc.)
-   - Uses the keyword naturally throughout
-   - Adds proper H2/H3 headings
-   - Is written for an Indian digital marketing agency audience
-   - Professional tone, no fluff
-   - 800-1200 words minimum
-
-Return ONLY this JSON (no markdown, no backticks):
-{
-  "new_title": "Improved SEO page title (50-60 chars)",
-  "new_content": "Full improved HTML content with proper H2/H3 tags, paragraphs, and if relevant an FAQ section at the end",
-  "changes_made": ["List of specific improvements made", "e.g. Added FAQ section", "Added benefits section"]
-}`;
+    const writePrompt='You are an SEO content writer. Search Google for the top 3 pages ranking for "'+keyword+'" then write improved HTML content for this page.\n\nPAGE: '+p.url+'\nCURRENT TITLE: '+currentTitle+'\n\nIMPORTANT: Your ENTIRE response must be ONLY a JSON object. No explanation, no markdown, no text before or after. Start with { and end with }.\n\nJSON format:\n{"new_title":"improved title here","new_content":"full HTML content here with h2 h3 tags and FAQ section","changes_made":["improvement 1","improvement 2","improvement 3"]}';
 
     const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
@@ -1136,10 +1106,40 @@ Return ONLY this JSON (no markdown, no backticks):
       }else{raw=texts;break;}
     }
     if(!raw)throw new Error('Empty response from AI');
-    let jsonStr=raw.trim().replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim();
+    // Strip markdown/extra text robustly
+    let jsonStr=raw.trim();
+    jsonStr=jsonStr.replace(/```json/g,'').replace(/```/g,'').trim();
     const s=jsonStr.indexOf('{'),e=jsonStr.lastIndexOf('}');
-    if(s===-1||e===-1)throw new Error('No JSON in AI response');
-    const improved=JSON.parse(jsonStr.slice(s,e+1));
+    if(s===-1||e===-1){
+      // AI didn't return JSON — build a basic response from the raw text
+      const improved={new_title:currentTitle,new_content:'<p>'+raw.replace(/\n/g,'</p><p>')+'</p>',changes_made:['AI rewrote content based on competitor analysis']};
+      window._wpImproved=window._wpImproved||{};
+      window._wpImproved[i]=improved;
+      log('⚠ AI returned plain text — using as content','#f59e0b');
+      // skip to preview
+      const previewDiv2=document.createElement('div');
+      previewDiv2.id='preview-fallback-'+i;
+      const titleInput2=document.createElement('input');
+      titleInput2.id='edit-title-'+i;titleInput2.value=currentTitle;
+      titleInput2.style.cssText='width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:12px;outline:none;margin:8px 0;box-sizing:border-box';
+      const contentArea2=document.createElement('textarea');
+      contentArea2.id='edit-content-'+i;contentArea2.value=raw;
+      contentArea2.style.cssText='width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:11px;font-family:JetBrains Mono,monospace;resize:vertical;outline:none;box-sizing:border-box;margin:8px 0';
+      const pbtn=document.createElement('button');
+      pbtn.id='publish-btn-'+i;pbtn.textContent='✅ Publish to WordPress';
+      pbtn.style.cssText='background:#22c55e;color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:Syne,sans-serif;font-size:13px;font-weight:700;cursor:pointer';
+      pbtn.onclick=()=>publishToWP(i,postType,postId);
+      previewDiv2.appendChild(titleInput2);previewDiv2.appendChild(contentArea2);previewDiv2.appendChild(pbtn);
+      updateDiv.appendChild(previewDiv2);
+      previewDiv2.scrollIntoView({behavior:'smooth',block:'start'});
+      wpBtn.disabled=false;wpBtn.textContent='🚀 Auto-Update Page on WordPress';
+      return;
+    }
+    let improved;
+    try{ improved=JSON.parse(jsonStr.slice(s,e+1)); }
+    catch(parseErr){
+      improved={new_title:currentTitle,new_content:raw,changes_made:['AI rewrote content']};
+    }
     log('✓ AI wrote improved content ('+((improved.new_content||'').length)+' chars)','#22c55e');
 
     // STEP 3 — preview before publishing
