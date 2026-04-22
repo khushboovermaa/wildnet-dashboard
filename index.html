@@ -182,6 +182,13 @@
       <div class="week-badge" id="weekBadge"></div>
       <div class="alert-badge" id="alertBadge" onclick="showActionView()">🎯 <span id="alertCount">0</span> actionable URLs</div>
       <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+      <div style="position:relative;display:inline-block" id="createDropdownWrap">
+        <button class="settings-btn" onclick="toggleCreateDropdown()" style="background:linear-gradient(135deg,#4f8eff,#a78bfa);color:#fff;border:none">✦ Create New ▾</button>
+        <div id="createDropdown" style="display:none;position:absolute;top:38px;right:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;min-width:180px;z-index:200;box-shadow:0 8px 32px rgba(0,0,0,0.4);overflow:hidden">
+          <div onclick="openCreatePost('blog')" style="padding:10px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text);display:flex;align-items:center;gap:8px;transition:background 0.1s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''"">📝 Blog Post</div>
+          <div onclick="openCreatePost('service')" style="padding:10px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text);display:flex;align-items:center;gap:8px;border-top:1px solid var(--border);transition:background 0.1s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">🛠 Service Page</div>
+        </div>
+      </div>
       <button class="settings-btn" onclick="openSettings()">⚙ API Key</button>
       <button class="logout-btn" onclick="doLogout()">Sign out</button>
     </div>
@@ -284,6 +291,59 @@
   </div>
 </div>
 <div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="createPostModal" onclick="if(event.target===this)closeCreatePost()">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title" id="createPostTitle">✦ Create New Post</div>
+    <div class="modal-sub" id="createPostSub">AI will research the topic, write full SEO content and publish it live on your website</div>
+    <input type="hidden" id="createPostContentType" value="blog">
+    <div class="modal-field">
+      <label class="modal-label">Topic / Title</label>
+      <input class="modal-input" id="newPostTopic" placeholder="e.g. Best SEO Strategies for 2025" autocomplete="off">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Target Keyword</label>
+      <input class="modal-input" id="newPostKeyword" placeholder="e.g. seo strategies 2025" autocomplete="off">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">URL Slug</label>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap" id="slugPrefix">wildnettechnologies.com/blogs/</span>
+        <input class="modal-input" id="newPostSlug" placeholder="best-seo-strategies-2025" autocomplete="off" style="flex:1">
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">Leave blank to auto-generate from title</div>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Category</label>
+      <select class="modal-input" id="newPostCategory">
+        <option value="">-- Loading categories… --</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Tags <span style="color:var(--muted);font-size:10px">(comma separated)</span></label>
+      <input class="modal-input" id="newPostTags" placeholder="e.g. seo, digital marketing, google" autocomplete="off">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Post Type</label>
+      <select class="modal-input" id="newPostType">
+        <option value="posts">Blog Post</option>
+        <option value="pages">Page</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Post Status</label>
+      <select class="modal-input" id="newPostStatus">
+        <option value="publish">Publish Live Immediately</option>
+        <option value="draft">Save as Draft (Review before publishing)</option>
+      </select>
+    </div>
+    <div id="createPostLog" style="display:none;margin-bottom:16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11px;font-family:JetBrains Mono,monospace;line-height:2.2;max-height:200px;overflow-y:auto"></div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closeCreatePost()">Cancel</button>
+      <button class="modal-btn primary" id="createPostBtn" onclick="runCreatePost()">✦ Write & Publish</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const CLIENT_ID='939917237961-3h2p5btu6ls4nbbrrc5jparlkqcuss0r.apps.googleusercontent.com';
@@ -1144,8 +1204,26 @@ async function autoUpdatePage(i){
       log('⚠ Used plain text fallback','#f59e0b');
     }
 
-    // STEP 4: Clean and auto-publish directly
-    log('⏳ Step 4: Publishing to WordPress…');
+    // STEP 4: Upload featured image
+    log('⏳ Step 4: Uploading featured image…');
+    var featuredMediaId=null;
+    try{
+      var imgSeed=keyword.split(' ').slice(0,2).join('-').toLowerCase().replace(/[^a-z0-9-]/g,'');
+      var imgResp=await fetch('https://picsum.photos/seed/'+imgSeed+'/1200/628');
+      var imgBlob=await imgResp.blob();
+      var imgFilename=slug+'-featured.jpg';
+      var mediaResp=await fetch(wpBase+'/media',{
+        method:'POST',
+        headers:{Authorization:auth,'Content-Disposition':'attachment; filename="'+imgFilename+'"','Content-Type':'image/jpeg'},
+        body:imgBlob
+      });
+      var mediaResult=await mediaResp.json();
+      if(mediaResult.id){featuredMediaId=mediaResult.id;log('✓ Image uploaded','#22c55e');}
+      else{log('⚠ Image skipped','#f59e0b');}
+    }catch(imgErr){log('⚠ Image failed: '+imgErr.message,'#f59e0b');}
+
+    // STEP 5: Clean and auto-publish directly
+    log('⏳ Step 5: Publishing to WordPress…');
     var finalTitle=improved.new_title||currentTitle;
     var finalContent=improved.new_content||rawText;
     // Deep clean content
@@ -1226,9 +1304,289 @@ async function publishToWP(i,postType,postId){
   }
 }
 
+// Convert HTML to Gutenberg blocks
+function convertToGutenberg(html){
+  // Parse HTML into Gutenberg block markup
+  var result='';
+  // Split by block-level tags
+  var temp=document.createElement('div');
+  temp.innerHTML=html;
+  var nodes=temp.childNodes;
+  nodes.forEach(function(node){
+    if(node.nodeType===3){// text node
+      var t=node.textContent.trim();
+      if(t)result+='<!-- wp:paragraph --><p>'+t+'</p><!-- /wp:paragraph -->\n';
+    } else if(node.nodeName==='H2'){
+      result+='<!-- wp:heading {"level":2} --><h2 class="wp-block-heading">'+node.innerHTML+'</h2><!-- /wp:heading -->\n';
+    } else if(node.nodeName==='H3'){
+      result+='<!-- wp:heading {"level":3} --><h3 class="wp-block-heading">'+node.innerHTML+'</h3><!-- /wp:heading -->\n';
+    } else if(node.nodeName==='P'){
+      if(node.innerHTML.trim())result+='<!-- wp:paragraph --><p>'+node.innerHTML+'</p><!-- /wp:paragraph -->\n';
+    } else if(node.nodeName==='UL'){
+      result+='<!-- wp:list --><ul class="wp-block-list">'+node.innerHTML+'</ul><!-- /wp:list -->\n';
+    } else if(node.nodeName==='OL'){
+      result+='<!-- wp:list {"ordered":true} --><ol class="wp-block-list">'+node.innerHTML+'</ol><!-- /wp:list -->\n';
+    } else {
+      if(node.innerHTML&&node.innerHTML.trim())result+='<!-- wp:paragraph --><p>'+node.innerHTML+'</p><!-- /wp:paragraph -->\n';
+    }
+  });
+  return result||html;
+}
+
+// Get or create WP tags by name, return array of IDs
+async function getOrCreateTags(tagNames,wpBase,auth){
+  var ids=[];
+  for(var i=0;i<tagNames.length;i++){
+    var name=tagNames[i];
+    try{
+      // Search for existing tag
+      var r=await fetch(wpBase+'/tags?search='+encodeURIComponent(name)+'&_fields=id,name',{headers:{Authorization:auth}});
+      var existing=await r.json();
+      if(Array.isArray(existing)&&existing.length>0){
+        ids.push(existing[0].id);
+      } else {
+        // Create new tag
+        var cr=await fetch(wpBase+'/tags',{method:'POST',headers:{'Content-Type':'application/json',Authorization:auth},body:JSON.stringify({name:name})});
+        var created=await cr.json();
+        if(created.id)ids.push(created.id);
+      }
+    }catch(e){}
+  }
+  return ids;
+}
+
 function filterTable(){
   const q=document.getElementById('searchBox').value.toLowerCase();
   document.querySelectorAll('tr.data-row').forEach(row=>{row.style.display=row.dataset.url.includes(q)?'':'none';});
+}
+
+// ── CREATE NEW POST ───────────────────────────────────────────────────────
+function toggleCreateDropdown(){
+  var d=document.getElementById('createDropdown');
+  d.style.display=d.style.display==='none'?'block':'none';
+  // close on outside click
+  setTimeout(function(){
+    document.addEventListener('click',function handler(e){
+      if(!document.getElementById('createDropdownWrap').contains(e.target)){
+        d.style.display='none';
+        document.removeEventListener('click',handler);
+      }
+    });
+  },10);
+}
+function openCreatePost(type){
+  document.getElementById('createDropdown').style.display='none';
+  if(!getWpUser()||!getWpPass()){showToast('Add WordPress credentials in ⚙ Settings first',true);openSettings();return;}
+  if(!getApiKey()){showToast('Add Anthropic API key in ⚙ Settings first',true);openSettings();return;}
+  var isBlog=type!=='service';
+  document.getElementById('createPostContentType').value=type||'blog';
+  document.getElementById('createPostTitle').textContent=isBlog?'📝 Create New Blog Post':'🛠 Create New Service Page';
+  document.getElementById('createPostSub').textContent=isBlog?'AI researches competitors, writes SEO blog post and publishes live':'AI researches competitors, writes conversion-focused service page and publishes live';
+  document.getElementById('slugPrefix').textContent=isBlog?'wildnettechnologies.com/blogs/':'wildnettechnologies.com/';
+  document.getElementById('newPostType').value=isBlog?'posts':'pages';
+  document.getElementById('createPostModal').style.display='flex';
+  document.getElementById('createPostLog').style.display='none';
+  document.getElementById('createPostLog').innerHTML='';
+  document.getElementById('createPostBtn').disabled=false;
+  document.getElementById('createPostBtn').textContent=isBlog?'✦ Write & Publish Blog':'✦ Write & Publish Service Page';
+  document.getElementById('createPostBtn').onclick=runCreatePost;
+  // Load WP categories
+  loadWPCategories();
+}
+
+async function loadWPCategories(){
+  try{
+    var auth='Basic '+btoa(getWpUser()+':'+getWpPass());
+    var r=await fetch('https://www.wildnettechnologies.com/wp-json/wp/v2/categories?per_page=50&_fields=id,name',{headers:{Authorization:auth}});
+    var cats=await r.json();
+    var sel=document.getElementById('newPostCategory');
+    sel.innerHTML='<option value="">-- No Category --</option>';
+    if(Array.isArray(cats)){
+      cats.forEach(function(c){
+        var o=document.createElement('option');
+        o.value=c.id;o.textContent=c.name;
+        sel.appendChild(o);
+      });
+    }
+  }catch(e){
+    document.getElementById('newPostCategory').innerHTML='<option value="">Could not load categories</option>';
+  }
+}
+function closeCreatePost(){document.getElementById('createPostModal').style.display='none';}
+
+async function runCreatePost(){
+  var topic=document.getElementById('newPostTopic').value.trim();
+  var keyword=document.getElementById('newPostKeyword').value.trim();
+  var slugInput=document.getElementById('newPostSlug').value.trim();
+  var postType=document.getElementById('newPostType').value;
+  var postStatus=document.getElementById('newPostStatus').value;
+  var categoryId=document.getElementById('newPostCategory').value;
+  var tagsRaw=document.getElementById('newPostTags').value.trim();
+  if(!topic){showToast('Enter a topic first',true);return;}
+  if(!keyword)keyword=topic;
+  var finalSlug=slugInput||topic.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+
+  var btn=document.getElementById('createPostBtn');
+  var logDiv=document.getElementById('createPostLog');
+  btn.disabled=true;btn.textContent='Working…';
+  logDiv.style.display='block';logDiv.innerHTML='';
+
+  function clog(msg,col){
+    var d=document.createElement('div');
+    d.textContent=msg;d.style.color=col||'var(--muted)';
+    logDiv.appendChild(d);
+    logDiv.scrollTop=logDiv.scrollHeight;
+  }
+
+  var apiKey=getApiKey();
+  var wpUser=getWpUser();
+  var wpPass=getWpPass();
+  var wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
+  var auth='Basic '+btoa(wpUser+':'+wpPass);
+
+  try{
+    // STEP 1: Research competitors
+    clog('⏳ Researching top ranking pages for "'+keyword+'"…');
+    var searchResp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:2000,tools:[{type:'web_search_20250305',name:'web_search'}],messages:[{role:'user',content:'Search Google for: '+keyword+'. Summarize what the top 5 ranking pages cover — their headings, topics, FAQs, and word count.'}]})
+    });
+    var sd=await searchResp.json();
+    if(sd.error)throw new Error(sd.error.message);
+    var competitorInfo='';
+    var smsgs=[{role:'user',content:'Search Google for: '+keyword+'. Summarize what the top 5 ranking pages cover — their headings, topics, FAQs, and word count.'}];
+    for(var r=0;r<5;r++){
+      var blocks=sd.content||[];
+      var txt=blocks.filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
+      if(sd.stop_reason==='end_turn'){competitorInfo=txt;break;}
+      if(sd.stop_reason==='tool_use'){
+        clog('⏳ Reading competitor pages…');
+        smsgs.push({role:'assistant',content:blocks});
+        var tr=blocks.filter(function(b){return b.type==='tool_use';}).map(function(b){return{type:'tool_result',tool_use_id:b.id,content:'Done.'};});
+        smsgs.push({role:'user',content:tr});
+        var sr2=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:2000,tools:[{type:'web_search_20250305',name:'web_search'}],messages:smsgs})});
+        sd=await sr2.json();
+        if(sd.error)throw new Error(sd.error.message);
+      }else{competitorInfo=txt;break;}
+    }
+    clog('✓ Competitor research done','#22c55e');
+
+    // STEP 2: Write full SEO content
+    clog('⏳ AI writing full SEO content (800-1500 words)…');
+    var contentType=document.getElementById('createPostContentType').value;
+    var isBlog=contentType!=='service';
+    var blogInstructions='Write a comprehensive SEO blog post (1000-1500 words). Include: engaging intro with keyword, 5-7 H2 sections covering all aspects, bullet points, a FAQ section at end with 5 questions and answers.';
+    var serviceInstructions='Write a conversion-focused service page (800-1200 words). Include: powerful headline, what the service is, key benefits (ul li), how it works (numbered steps), why choose Wildnet Technologies, industries served, FAQ section, strong CTA at end.';
+    var writeMsg='You are an expert SEO content writer for Wildnet Technologies, an Indian digital marketing agency. TOPIC: '+topic+' | KEYWORD: '+keyword+' | COMPETITOR INSIGHTS: '+competitorInfo.substring(0,800)+' | '+(isBlog?blogInstructions:serviceInstructions)+' Use ONLY these HTML tags: h2 h3 p ul li strong em. NO backslash-n in content. Output ONLY JSON (no markdown, start with { end with }): {"title":"optimized title","content":"<h2>heading</h2><p>text</p>","meta_description":"150 char description","changes_made":["point1","point2"]}';
+
+    var writeResp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,messages:[{role:'user',content:writeMsg}]})
+    });
+    var wd=await writeResp.json();
+    if(wd.error)throw new Error(wd.error.message);
+    var rawText=(wd.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').trim();
+    if(!rawText)throw new Error('Empty response from AI');
+
+    // Parse JSON
+    var parsed;
+    try{
+      var clean=rawText.replace(/```json/g,'').replace(/```/g,'').trim();
+      var si=clean.indexOf('{'),ei=clean.lastIndexOf('}');
+      parsed=JSON.parse(clean.slice(si,ei+1));
+    }catch(e){
+      parsed={title:topic,content:'<p>'+rawText.split('\n\n').join('</p><p>')+'</p>',meta_description:'',changes_made:[]};
+    }
+
+    // Clean content
+    var finalTitle=parsed.title||topic;
+    var finalContent=(parsed.content||'')
+      .replace(/\n/g,' ').replace(/\r/g,'').replace(/\t/g,' ')
+      .replace(/  +/g,' ').trim();
+    if(!finalContent.includes('<'))finalContent='<p>'+finalContent+'</p>';
+    clog('✓ Content written ('+finalContent.length+' chars)','#22c55e');
+
+    // STEP 3: Publish to WordPress
+    // STEP: Fetch and upload featured image
+    clog('⏳ Finding and uploading featured image…');
+    var featuredMediaId=null;
+    try{
+      // Fetch relevant image from Picsum (free, always works)
+      var imgWidth=1200,imgHeight=628;
+      // Use a seed based on keyword for consistent images
+      var imgSeed=keyword.split(' ').slice(0,2).join('-').toLowerCase().replace(/[^a-z0-9-]/g,'');
+      var picsumUrl='https://picsum.photos/seed/'+imgSeed+'/'+imgWidth+'/'+imgHeight;
+      var imgResp=await fetch(picsumUrl);
+      var imgBlob=await imgResp.blob();
+      // Upload to WP media library
+      var imgFilename=finalSlug+'.jpg';
+      var mediaResp=await fetch(wpBase+'/media',{
+        method:'POST',
+        headers:{
+          Authorization:auth,
+          'Content-Disposition':'attachment; filename="'+imgFilename+'"',
+          'Content-Type':'image/jpeg'
+        },
+        body:imgBlob
+      });
+      var mediaResult=await mediaResp.json();
+      if(mediaResult.id){
+        featuredMediaId=mediaResult.id;
+        clog('✓ Featured image uploaded (ID: '+featuredMediaId+')','#22c55e');
+      }else{
+        clog('⚠ Image upload skipped: '+( mediaResult.message||'unknown error'),'#f59e0b');
+      }
+    }catch(imgErr){
+      clog('⚠ Image fetch failed: '+imgErr.message+' — continuing without image','#f59e0b');
+    }
+    clog('⏳ Publishing to WordPress as '+postStatus+'…');
+    // Convert HTML to Gutenberg blocks
+    var gbContent=convertToGutenberg(finalContent);
+    var pubBody={title:finalTitle,content:gbContent,status:postStatus,slug:finalSlug};
+    if(featuredMediaId)pubBody.featured_media=featuredMediaId;
+    if(categoryId)pubBody.categories=[parseInt(categoryId)];
+    // Handle tags
+    if(tagsRaw){
+      try{
+        var tagNames=tagsRaw.split(',').map(function(t){return t.trim();}).filter(Boolean);
+        var tagIds=await getOrCreateTags(tagNames,wpBase,auth);
+        if(tagIds.length)pubBody.tags=tagIds;
+      }catch(te){clog('⚠ Tags not set: '+te.message,'#f59e0b');}
+    }
+    var pubResp=await fetch(wpBase+'/'+postType,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:auth},
+      body:JSON.stringify(pubBody)
+    });
+    var pubResult=await pubResp.json();
+    if(pubResult.id){
+      clog('🎉 '+(postStatus==='publish'?'Published live!':'Saved as draft!')+' ID: '+pubResult.id,'#22c55e');
+      var link=document.createElement('a');
+      link.href=pubResult.link||'#';
+      link.target='_blank';
+      link.style.cssText='display:inline-block;margin-top:8px;background:#22c55e;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none';
+      link.textContent=postStatus==='publish'?'🌐 View Live Page →':'📝 View Draft →';
+      logDiv.appendChild(link);
+      showToast(postStatus==='publish'?'✅ New post published!':'✅ Draft saved!');
+      btn.textContent='✦ Create Another';
+      btn.disabled=false;
+      btn.onclick=function(){
+        document.getElementById('newPostTopic').value='';
+        document.getElementById('newPostKeyword').value='';
+        document.getElementById('newPostSlug').value='';
+        logDiv.innerHTML='';logDiv.style.display='none';
+        btn.textContent='✦ Write & Publish';
+        btn.onclick=runCreatePost;
+      };
+    }else{
+      throw new Error(pubResult.message||JSON.stringify(pubResult));
+    }
+  }catch(err){
+    clog('❌ Error: '+err.message,'var(--red)');
+    btn.disabled=false;btn.textContent='✦ Write & Publish';
+  }
 }
 
 function setLoading(on,pct,msg){
