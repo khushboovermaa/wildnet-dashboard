@@ -1118,7 +1118,7 @@ async function autoUpdatePage(i){
 
     // STEP 3: Write improved content (NO tools — pure text response)
     log('⏳ AI writing improved content based on competitor analysis…');
-    var writePrompt='You are an SEO writer for Wildnet Technologies India.\nKEYWORD: '+keyword+'\nCURRENT TITLE: '+currentTitle+'\nCURRENT CONTENT: '+currentContent.substring(0,1500)+'\nCOMPETITOR ANALYSIS: '+competitorInfo+'\n\nWrite improved HTML content for this page. Respond with ONLY this JSON (no other text):{"new_title":"title","new_content":"html content","changes_made":["change1","change2"]}  Start your response with { and end with }';
+    var writePrompt='Write improved SEO blog content for Wildnet Technologies (Indian digital marketing agency).\nKeyword: '+keyword+'\nCurrent title: '+currentTitle+'\nCompetitor insights: '+competitorInfo.substring(0,800)+'\nCurrent content summary: '+currentContent.replace(/<[^>]+>/g,' ').substring(0,600)+'\n\nIMPORTANT RULES:\n- Output ONLY a raw JSON object\n- No text before or after the JSON\n- No markdown code blocks\n- HTML in new_content must use ONLY <h2> <h3> <p> <ul> <li> <strong> <em> tags\n- Do NOT use any backslash-n in new_content - use actual HTML tags instead\n- new_content must be valid WordPress HTML ready to paste directly\n\nJSON format (output ONLY this, nothing else):\n{"new_title":"title here","new_content":"<h2>Section</h2><p>Content here.</p><h2>FAQ</h2><p>Q: question</p><p>A: answer</p>","changes_made":["improvement 1","improvement 2"]}';
 
     var writeResp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
@@ -1144,72 +1144,40 @@ async function autoUpdatePage(i){
       log('⚠ Used plain text fallback','#f59e0b');
     }
 
-    // Store for publish
-    window._wpImproved=window._wpImproved||{};
-    window._wpImproved[i]={title:improved.new_title||currentTitle,content:improved.new_content||rawText};
-
-    // STEP 4: Show editable preview
-    log('✓ Ready — review below before publishing','#22c55e');
-    var prev=document.createElement('div');
-    prev.style.cssText='margin-top:14px;padding-top:12px;border-top:1px solid var(--border)';
-
-    var h=document.createElement('div');
-    h.style.cssText='font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:12px';
-    h.textContent='📝 Review & Edit Before Publishing';
-    prev.appendChild(h);
-
-    var tl=document.createElement('div');
-    tl.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
-    tl.textContent='New Page Title';
-    prev.appendChild(tl);
-
-    var ti=document.createElement('input');
-    ti.id='edit-title-'+i;
-    ti.value=improved.new_title||currentTitle;
-    ti.style.cssText='width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:12px;outline:none;margin-bottom:12px;box-sizing:border-box';
-    prev.appendChild(ti);
-
-    if(improved.changes_made&&improved.changes_made.length){
-      var cl=document.createElement('div');
-      cl.style.cssText='margin-bottom:10px';
-      var cll=document.createElement('div');
-      cll.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
-      cll.textContent='Improvements Made';
-      cl.appendChild(cll);
-      improved.changes_made.forEach(function(c){var d=document.createElement('div');d.style.cssText='font-size:11px;color:var(--green);line-height:1.8';d.textContent='✓ '+c;cl.appendChild(d);});
-      prev.appendChild(cl);
+    // STEP 4: Clean and auto-publish directly
+    log('⏳ Step 4: Publishing to WordPress…');
+    var finalTitle=improved.new_title||currentTitle;
+    var finalContent=improved.new_content||rawText;
+    // Deep clean content
+    finalContent=finalContent
+      .replace(/\\n/g,' ').replace(/\\r/g,'').replace(/\\t/g,' ')
+      .replace(/\n/g,' ').replace(/\r/g,'').replace(/\t/g,' ')
+      .replace(/  +/g,' ').trim();
+    // If no HTML tags, convert to paragraphs
+    if(!finalContent.includes('<p>') && !finalContent.includes('<h2>')){
+      finalContent='<p>'+finalContent.split(/\.\s+/).join('.</p><p>')+'</p>';
     }
-
-    var ctl=document.createElement('div');
-    ctl.style.cssText='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
-    ctl.textContent='New Content (editable HTML)';
-    prev.appendChild(ctl);
-
-    var ta=document.createElement('textarea');
-    ta.id='edit-content-'+i;
-    ta.value=improved.new_content||rawText;
-    ta.style.cssText='width:100%;min-height:240px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:11px;font-family:JetBrains Mono,monospace;resize:vertical;outline:none;line-height:1.6;box-sizing:border-box;margin-bottom:12px';
-    prev.appendChild(ta);
-
-    var br=document.createElement('div');
-    br.style.cssText='display:flex;gap:8px';
-
-    var pb=document.createElement('button');
-    pb.id='publish-btn-'+i;
-    pb.textContent='✅ Publish to WordPress';
-    pb.style.cssText='background:#22c55e;color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:Syne,sans-serif;font-size:13px;font-weight:700;cursor:pointer';
-    pb.onclick=(function(idx,pt,pid){return function(){publishToWP(idx,pt,pid);};})(i,postType,postId);
-    br.appendChild(pb);
-
-    var cb=document.createElement('button');
-    cb.textContent='✕ Cancel';
-    cb.style.cssText='background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-family:Syne,sans-serif;font-size:12px;cursor:pointer';
-    cb.onclick=function(){updateDiv.style.display='none';};
-    br.appendChild(cb);
-    prev.appendChild(br);
-
-    updateDiv.appendChild(prev);
-    prev.scrollIntoView({behavior:'smooth',block:'start'});
+    try{
+      var pubRes=await fetch(wpBase+'/'+postType+'/'+postId,{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:auth},
+        body:JSON.stringify({title:finalTitle,content:finalContent})
+      });
+      var pubResult=await pubRes.json();
+      if(pubResult.id){
+        log('🎉 Published successfully!','#22c55e');
+        var successDiv=document.createElement('div');
+        successDiv.style.cssText='margin-top:10px;padding:12px;background:rgba(34,197,94,0.1);border-radius:8px;font-size:12px;font-weight:700;color:#22c55e';
+        successDiv.innerHTML='✅ Page updated! <a href="'+pubResult.link+'" target="_blank" style="color:var(--accent)">View live page →</a>';
+        updateDiv.appendChild(successDiv);
+        successDiv.scrollIntoView({behavior:'smooth',block:'start'});
+        showToast('✅ Page updated on WordPress!');
+      }else{
+        throw new Error(pubResult.message||'Publish failed');
+      }
+    }catch(pubErr){
+      log('❌ Publish error: '+pubErr.message,'var(--red)');
+    }
     wpBtn.disabled=false;wpBtn.textContent='🚀 Re-run Auto-Update';
 
   }catch(err){
