@@ -1035,23 +1035,33 @@ async function autoUpdatePage(i){
   const p=actionPages[i];
   if(!p)return;
   const wpUser=getWpUser(),wpPass=getWpPass(),apiKey=getApiKey();
-  if(!wpUser||!wpPass){showToast('Add WordPress credentials in ⚙ Settings first',true);return;}
-  if(!apiKey){showToast('Add Anthropic API key in ⚙ Settings first',true);return;}
+  if(!wpUser||!wpPass){showToast('Add WordPress credentials in ⚙ Settings first',true);openSettings();return;}
+  if(!apiKey){showToast('Add Anthropic API key in ⚙ Settings first',true);openSettings();return;}
 
   const wpBtn=document.getElementById('wp-btn-'+i);
   const updateDiv=document.getElementById('wp-update-'+i);
   wpBtn.disabled=true;wpBtn.textContent='Updating…';
-  updateDiv.style.display='block';
-  updateDiv.innerHTML=`<div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace">⏳ Step 1/4: Finding page in WordPress…</div>`;
+
+  // Force show the update div with high visibility
+  updateDiv.style.cssText='display:block!important;margin-top:12px;border:2px solid #22c55e;border-radius:10px;padding:14px;background:rgba(34,197,94,0.06)';
+  updateDiv.innerHTML=`<div style="font-size:12px;color:#22c55e;font-family:'JetBrains Mono',monospace;font-weight:700">🔄 Auto-Update Started…</div>
+  <div id="wp-steps-${i}" style="margin-top:8px;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;line-height:2"></div>`;
 
   const keyword=urlToKeyword(p.url);
   const slug=p.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/+$/,'').split('/').pop()||'';
   const wpBase='https://www.wildnettechnologies.com/wp-json/wp/v2';
   const authHeader='Basic '+btoa(wpUser+':'+wpPass);
 
+  const addStep=(msg,color='var(--muted)')=>{
+    const stepsDiv=document.getElementById('wp-steps-'+i);
+    if(stepsDiv){const d=document.createElement('div');d.style.color=color;d.textContent=msg;stepsDiv.appendChild(d);}
+    // scroll into view
+    updateDiv.scrollIntoView({behavior:'smooth',block:'nearest'});
+  };
+
   try{
     // STEP 1 — find the post/page by slug
-    updateDiv.innerHTML=`<div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace">⏳ Step 1/4: Finding page in WordPress…</div>`;
+    addStep('⏳ Step 1/4: Finding page in WordPress…');
     let postId=null,postType=null,currentContent='',currentTitle='';
     for(const pt of ['pages','posts']){
       const r=await fetch(`${wpBase}/${pt}?slug=${slug}&_fields=id,title,content`,{headers:{Authorization:authHeader}});
@@ -1064,10 +1074,10 @@ async function autoUpdatePage(i){
       }
     }
     if(!postId){throw new Error('Page not found in WordPress. Check the slug: '+slug);}
-    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace">✓ Found: "${currentTitle}" (ID: ${postId})</div>`;
+    addStep('✓ Found: "'+currentTitle+'" (ID: '+postId+')', 'var(--green)');
 
     // STEP 2 — fetch competitor content via AI
-    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:6px">⏳ Step 2/4: AI analyzing competitors and writing improved content… (30–60 sec)</div>`;
+    addStep('⏳ Step 2/4: AI writing improved content… (30-60 sec)');
     const notesWrap=document.getElementById('ai-notes-'+i);
     const existingAnalysis=notesWrap?.innerText||'';
 
@@ -1118,7 +1128,7 @@ Return ONLY this JSON (no markdown, no backticks):
       const texts=blocks.filter(b=>b.type==='text').map(b=>b.text).join('');
       if(texts&&(loopData.stop_reason==='end_turn'||loopData.stop_reason==='max_tokens')){raw=texts;break;}
       if(loopData.stop_reason==='tool_use'){
-        updateDiv.querySelector('div:last-child').textContent='⏳ Step 2/4: Reading competitor pages…';
+        addStep('⏳ Reading competitor pages…');
         loopMsgs.push({role:'assistant',content:blocks});
         const tr=blocks.filter(b=>b.type==='tool_use').map(b=>({type:'tool_result',tool_use_id:b.id,content:'Search complete.'}));
         loopMsgs.push({role:'user',content:tr});
@@ -1135,7 +1145,7 @@ Return ONLY this JSON (no markdown, no backticks):
     updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace">✓ AI wrote improved content (${(improved.new_content||'').length} chars)</div>`;
 
     // STEP 3 — preview before publishing
-    updateDiv.innerHTML+=`<div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:6px">⏳ Step 3/4: Ready to publish — review changes below</div>`;
+    addStep('⏳ Step 3/4: Ready to publish — review below');
     updateDiv.innerHTML+=`<div style="margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11px;line-height:1.7">
       <div style="font-weight:700;color:#a78bfa;margin-bottom:6px">📝 Changes AI will make:</div>
       <div style="color:var(--text)"><strong>New Title:</strong> ${improved.new_title||currentTitle}</div>
