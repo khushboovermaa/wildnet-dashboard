@@ -350,7 +350,7 @@
 <script>
 const CLIENT_ID='939917237961-3h2p5btu6ls4nbbrrc5jparlkqcuss0r.apps.googleusercontent.com';
 const PROPERTY='https://www.wildnettechnologies.com/';
-const NUM_WEEKS=8;
+const NUM_WEEKS=5;
 const BRANDED_KW='wildnet';
 const DROP_THRESH=5;
 
@@ -518,14 +518,19 @@ function doLogout(){
 }
 
 function getWeeks(n){
-  const result=[],today=new Date(),dow=today.getDay();
-  const lastSun=new Date(today);
-  lastSun.setDate(today.getDate()-(dow===0?7:dow));
-  lastSun.setHours(0,0,0,0);
+  const result=[];
+  // End at 3 days ago (GSC delay) to get latest available data
+  const endDate=new Date();
+  endDate.setDate(endDate.getDate()-3);
+  endDate.setHours(0,0,0,0);
   for(let w=n-1;w>=0;w--){
-    const sun=new Date(lastSun);sun.setDate(lastSun.getDate()-w*7);
-    const mon=new Date(sun);mon.setDate(sun.getDate()-6);
-    result.push({label:fmt(mon)+'–'+fmt(sun),start:toISO(mon),end:toISO(sun)});
+    const end=new Date(endDate);end.setDate(endDate.getDate()-w*7);
+    const start=new Date(end);start.setDate(end.getDate()-6);
+    result.push({
+      label:fmt(start)+'–'+fmt(end),
+      start:toISO(start),
+      end:toISO(end)
+    });
   }
   return result;
 }
@@ -533,10 +538,30 @@ function fmt(d){return(d.getMonth()+1)+'/'+d.getDate();}
 function toISO(d){return d.toISOString().split('T')[0];}
 
 async function gscFetch(body){
+  if(!token){
+    // Token missing — show login screen
+    document.getElementById('app').style.display='none';
+    document.getElementById('loginScreen').style.display='flex';
+    document.getElementById('loginBtn').disabled=false;
+    document.getElementById('loginBtn').textContent='Sign in with Google';
+    throw new Error('Session expired — please sign in again');
+  }
   const res=await fetch('https://www.googleapis.com/webmasters/v3/sites/'+encodeURIComponent(PROPERTY)+'/searchAnalytics/query',
     {method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
   const json=await res.json();
-  if(json.error)throw new Error(json.error.message);
+  if(json.error){
+    // Token expired — force re-login
+    if(json.error.code===401||json.error.status==='UNAUTHENTICATED'){
+      token=null;
+      document.getElementById('app').style.display='none';
+      document.getElementById('loginScreen').style.display='flex';
+      document.getElementById('loginBtn').disabled=false;
+      document.getElementById('loginBtn').textContent='Sign in with Google';
+      showToast('Session expired — please sign in again',true);
+      throw new Error('Session expired');
+    }
+    throw new Error(json.error.message);
+  }
   return json.rows||[];
 }
 
@@ -598,7 +623,14 @@ async function loadData(){
       showToast('Auto-refreshing GSC data…');
       loadData();
     }, 6*60*60*1000);
-  }catch(e){setLoading(false);showToast('Error: '+e.message,true);}
+  }catch(e){
+    setLoading(false);
+    if(e.message.includes('Session expired')){
+      showToast('Session expired — please sign in again',true);
+    } else {
+      showToast('Error loading data: '+e.message,true);
+    }
+  }
 }
 
 function computeActionPages(){
@@ -1392,6 +1424,63 @@ function updateLastUpdatedBadge(date){
     var e=document.getElementById('lastUpdated');
     if(e)e.textContent='Updated: '+l;
   },60000);
+}
+
+function applyDateRange(){
+  var fromVal=document.getElementById('dateFrom').value;
+  var toVal=document.getElementById('dateTo').value;
+  if(!fromVal||!toVal){showToast('Select both dates',true);return;}
+  if(fromVal>toVal){showToast('From must be before To',true);return;}
+  var from=new Date(fromVal),to=new Date(toVal);
+  var days=Math.floor((to-from)/(1000*60*60*24));
+  if(days<7){showToast('Select at least 7 days',true);return;}
+  // Build weeks from custom range
+  var customWeeks=[];
+  var cursor=new Date(to);
+  var fromDate=new Date(fromVal);
+  while(cursor>=fromDate && customWeeks.length<16){
+    var wEnd=new Date(cursor);
+    var wStart=new Date(cursor);wStart.setDate(cursor.getDate()-6);
+    if(wStart<fromDate)wStart=new Date(fromDate);
+    customWeeks.unshift({
+      label:(wStart.getMonth()+1)+'/'+wStart.getDate()+'–'+(wEnd.getMonth()+1)+'/'+wEnd.getDate(),
+      start:wStart.toISOString().split('T')[0],
+      end:wEnd.toISOString().split('T')[0]
+    });
+    cursor.setDate(cursor.getDate()-7);
+  }
+  weeks=customWeeks;
+  allData={};brandedData=[];brandedByPage={};
+  document.getElementById('weekBadge').textContent=customWeeks[0].label+' → '+customWeeks[customWeeks.length-1].label;
+  setLoading(true,0,'Loading custom date range…');
+  var loadPromises=[];
+  var idx=0;
+  (async function(){
+    try{
+      for(var i=0;i<weeks.length;i++){
+        setLoading(true,Math.round(i/weeks.length*70),'Fetching '+weeks[i].label+'…');
+        var wm=await fetchWeek(weeks[i].start,weeks[i].end);
+        Object.entries(wm).forEach(function(e){
+          if(!allData[e[0]])allData[e[0]]=Array(weeks.length).fill(null).map(function(){return{clicks:0,impressions:0};});
+          allData[e[0]][i]=e[1];
+        });
+      }
+      Object.keys(allData).forEach(function(url){for(var i=0;i<weeks.length;i++)if(!allData[url][i])allData[url][i]={clicks:0,impressions:0};});
+      for(var i=0;i<weeks.length;i++){
+        var b=await fetchBrandedWeek(weeks[i].start,weeks[i].end);
+        brandedData.push({clicks:b.clicks,impressions:b.impressions});
+        Object.entries(b.byPage).forEach(function(e){
+          if(!brandedByPage[e[0]])brandedByPage[e[0]]=Array(weeks.length).fill(null).map(function(){return{clicks:0,impressions:0};});
+          brandedByPage[e[0]][i]=e[1];
+        });
+      }
+      Object.keys(brandedByPage).forEach(function(url){for(var i=0;i<weeks.length;i++)if(!brandedByPage[url][i])brandedByPage[url][i]={clicks:0,impressions:0};});
+      setLoading(true,100,'Rendering…');
+      computeActionPages();buildSummary();buildBrandedPanel();buildTabs();showSegment(0);
+      setTimeout(function(){setLoading(false);},300);
+      showToast('Custom range loaded!');
+    }catch(e){setLoading(false);showToast('Error: '+e.message,true);}
+  })();
 }
 
 function filterTable(){
