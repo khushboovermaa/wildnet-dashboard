@@ -181,6 +181,7 @@
     <div class="topbar-right">
       <div class="week-badge" id="weekBadge"></div>
       <div class="alert-badge" id="alertBadge" onclick="showActionView()">🎯 <span id="alertCount">0</span> actionable URLs</div>
+      <span id="lastUpdated" style="font-size:10px;color:var(--muted);font-family:JetBrains Mono,monospace"></span>
       <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
       <div style="position:relative;display:inline-block" id="createDropdownWrap">
         <button class="settings-btn" onclick="toggleCreateDropdown()" style="background:linear-gradient(135deg,#4f8eff,#a78bfa);color:#fff;border:none">✦ Create New ▾</button>
@@ -323,6 +324,7 @@
       <label class="modal-label">Tags <span style="color:var(--muted);font-size:10px">(comma separated)</span></label>
       <input class="modal-input" id="newPostTags" placeholder="e.g. seo, digital marketing, google" autocomplete="off">
     </div>
+
     <div class="modal-field">
       <label class="modal-label">Post Type</label>
       <select class="modal-input" id="newPostType">
@@ -491,6 +493,16 @@ function doLogin(){
       token=resp.access_token;
       document.getElementById('loginScreen').style.display='none';
       document.getElementById('app').style.display='block';
+      // Check if last update was more than 6 hours ago
+      var lastUpdated=localStorage.getItem('wn_last_updated');
+      if(lastUpdated){
+        var lastDate=new Date(lastUpdated);
+        updateLastUpdatedBadge(lastDate);
+        var hoursAgo=Math.floor((new Date()-lastDate)/3600000);
+        if(hoursAgo>=6){
+          showToast('Data is '+hoursAgo+'h old — refreshing from GSC…');
+        }
+      }
       loadData();
     },
   });
@@ -576,6 +588,16 @@ async function loadData(){
     buildTabs();
     showSegment(0);
     setTimeout(()=>setLoading(false),300);
+    // Save last updated time
+    var now=new Date();
+    localStorage.setItem('wn_last_updated',now.toISOString());
+    updateLastUpdatedBadge(now);
+    // Schedule next auto-refresh in 6 hours
+    clearTimeout(window._autoRefreshTimer);
+    window._autoRefreshTimer=setTimeout(function(){
+      showToast('Auto-refreshing GSC data…');
+      loadData();
+    }, 6*60*60*1000);
   }catch(e){setLoading(false);showToast('Error: '+e.message,true);}
 }
 
@@ -1355,6 +1377,23 @@ async function getOrCreateTags(tagNames,wpBase,auth){
   return ids;
 }
 
+function updateLastUpdatedBadge(date){
+  var el=document.getElementById('lastUpdated');
+  if(!el)return;
+  var d=date||new Date();
+  var mins=Math.floor((new Date()-d)/60000);
+  var label=mins<1?'just now':mins<60?mins+'m ago':Math.floor(mins/60)+'h ago';
+  el.textContent='Updated: '+label;
+  // Update label every minute
+  clearInterval(window._badgeInterval);
+  window._badgeInterval=setInterval(function(){
+    var m=Math.floor((new Date()-d)/60000);
+    var l=m<1?'just now':m<60?m+'m ago':Math.floor(m/60)+'h ago';
+    var e=document.getElementById('lastUpdated');
+    if(e)e.textContent='Updated: '+l;
+  },60000);
+}
+
 function filterTable(){
   const q=document.getElementById('searchBox').value.toLowerCase();
   document.querySelectorAll('tr.data-row').forEach(row=>{row.style.display=row.dataset.url.includes(q)?'':'none';});
@@ -1490,23 +1529,70 @@ async function runCreatePost(){
     var rawText=(wd.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').trim();
     if(!rawText)throw new Error('Empty response from AI');
 
-    // Parse JSON
+    // Parse JSON robustly
     var parsed;
     try{
-      var clean=rawText.replace(/```json/g,'').replace(/```/g,'').trim();
-      var si=clean.indexOf('{'),ei=clean.lastIndexOf('}');
-      parsed=JSON.parse(clean.slice(si,ei+1));
+      var clean=rawText.replace(/^[^{]*/,'').replace(/[^}]*$/,'').trim();
+      if(!clean.startsWith('{'))throw new Error('No JSON found');
+      parsed=JSON.parse(clean);
     }catch(e){
-      parsed={title:topic,content:'<p>'+rawText.split('\n\n').join('</p><p>')+'</p>',meta_description:'',changes_made:[]};
+      // Try extracting JSON differently
+      try{
+        var si=rawText.lastIndexOf('{"'),ei=rawText.lastIndexOf('}');
+        if(si===-1)si=rawText.indexOf('{');
+        parsed=JSON.parse(rawText.slice(si,ei+1));
+      }catch(e2){
+        parsed={title:topic,content:'',meta_description:'',changes_made:[]};
+        clog('⚠ Could not parse AI response, retrying…','#f59e0b');
+      }
     }
 
-    // Clean content
-    var finalTitle=parsed.title||topic;
+    // If content is empty or looks like raw JSON text, something went wrong
+    var rawContent=parsed.content||'';
+    if(!rawContent || rawContent.includes('"title"') || rawContent.includes('json {')){
+      clog('⚠ AI returned bad content — retrying without tools…','#f59e0b');
+      // Retry with very strict prompt
+      var retryMsg='Write a '+( isBlog?'blog post':'service page')+' about: '+topic+'. Keyword: '+keyword+'. IMPORTANT: Your response must be ONLY a valid JSON object starting with { and ending with }. Use these exact keys: title, content, meta_description, changes_made. The content value must be clean HTML using only h2 h3 p ul li strong tags. No backslashes. No newlines inside strings. No markdown.';
+      var retryResp=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,messages:[{role:'user',content:retryMsg}]})
+      });
+      var retryData=await retryResp.json();
+      if(retryData.error)throw new Error(retryData.error.message);
+      var retryText=(retryData.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').trim();
+      try{
+        var rs=retryText.indexOf('{'),re2=retryText.lastIndexOf('}');
+        parsed=JSON.parse(retryText.slice(rs,re2+1));
+        clog('✓ Retry succeeded','#22c55e');
+      }catch(re){
+        parsed={title:topic,content:'<p>Content could not be generated. Please try again.</p>',meta_description:'',changes_made:[]};
+      }
+    }
+
+    // Title Case conversion
+    function toTitleCase(str){
+      var small=['a','an','the','and','but','or','for','nor','on','at','to','by','in','of','up','as','is'];
+      return str.split(' ').map(function(w,i){
+        return (i===0||small.indexOf(w.toLowerCase())===-1)?w.charAt(0).toUpperCase()+w.slice(1).toLowerCase():w.toLowerCase();
+      }).join(' ');
+    }
+
+    var finalTitle=toTitleCase(parsed.title||topic);
+    var metaDesc=parsed.meta_description||'';
+
+    // Deep clean content — remove any JSON artifacts
     var finalContent=(parsed.content||'')
       .replace(/\n/g,' ').replace(/\r/g,'').replace(/\t/g,' ')
+      .replace(/\\n/g,' ').replace(/\\"/g,'"')
       .replace(/  +/g,' ').trim();
+
+    // Safety check — if content still has JSON syntax, wrap raw text
+    if(finalContent.includes('"title"')||finalContent.includes('"content"')||finalContent.length<100){
+      finalContent='<p>Content generation failed. Please try again.</p>';
+    }
     if(!finalContent.includes('<'))finalContent='<p>'+finalContent+'</p>';
-    clog('✓ Content written ('+finalContent.length+' chars)','#22c55e');
+    clog('✓ Content ready ('+finalContent.length+' chars)','#22c55e');
 
     // STEP 3: Publish to WordPress
     // STEP: Fetch and upload featured image
@@ -1547,6 +1633,12 @@ async function runCreatePost(){
     var pubBody={title:finalTitle,content:gbContent,status:postStatus,slug:finalSlug};
     if(featuredMediaId)pubBody.featured_media=featuredMediaId;
     if(categoryId)pubBody.categories=[parseInt(categoryId)];
+    // Yoast SEO meta description via meta fields
+    if(metaDesc){
+      pubBody.meta={};
+      pubBody.meta._yoast_wpseo_metadesc=metaDesc;
+      pubBody.meta._yoast_wpseo_title=finalTitle+' - Wildnet Technologies';
+    }
     // Handle tags
     if(tagsRaw){
       try{
