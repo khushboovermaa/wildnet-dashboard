@@ -374,6 +374,9 @@ const NUM_WEEKS=5;
 const BRANDED_KW='wildnet';
 const DROP_THRESH=5;
 
+// HTML escape helper used in service page builder
+function esc(str){return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
 // ── SEGMENTS — ordered by priority (first match wins) ─────────────────────
 // Blogs / News / Case Studies MUST be checked first so content URLs
 // never bleed into service segments (e.g. /blogs/guest-posting-guide → Blogs)
@@ -1724,8 +1727,214 @@ async function runCreatePost(){
     }
     clog('✓ Competitor research done','#22c55e');
 
+    // ── SERVICE PAGE: Smart clone of SEO services page + keyword replacement ────────
+    if(!isBlog){
+      clog('⏳ Fetching your real service page template from WordPress…');
+
+
+      // STEP 1: Fetch the real SEO services page as structural template
+      var templateRaw='';
+      try{
+        var tResp=await fetch(wpBase+'/pages?slug=seo-services&context=edit&_fields=id,content',{headers:{Authorization:auth}});
+        var tPages=await tResp.json();
+        if(Array.isArray(tPages)&&tPages.length&&tPages[0].content&&tPages[0].content.raw){
+          templateRaw=tPages[0].content.raw;
+          clog('\u2713 Template loaded ('+Math.round(templateRaw.length/1024)+'KB)','#22c55e');
+        }
+      }catch(te){ clog('\u26a0 Template fetch error: '+te.message,'#f59e0b'); }
+
+      if(!templateRaw||templateRaw.length<1000){
+        clog('\u274c Could not load template. Check WP credentials and ensure the "seo-services" page exists.','var(--red)');
+        btn.disabled=false;btn.textContent='\u2746 Write & Publish Service Page';
+        return;
+      }
+
+      // STEP 2: AI generates all replacement content
+      clog('\u23f3 AI writing content for "'+topic+'"…');
+      var aiPrompt='You are an expert SEO content writer for Wildnet Technologies (19+ years, 350+ experts, Google Partner, India).\n\nGenerate content for a NEW service page about: "'+topic+'" (main keyword: "'+keyword+'").\nCompetitor data: '+competitorInfo.substring(0,400)+'\n\nReturn ONLY raw JSON (no markdown, no code fences). Start { end }:\n{"svc":"'+topic+'","svc_short":"'+topic.replace(/\s*(services?|in india|agency)\s*/gi,'').trim()+'","page_title":"Best '+topic+' in India | Wildnet Technologies","meta_desc":"under 155 chars — '+topic+' by Wildnet — 19+ years, data-driven results","h1_white":"The Best '+topic+' in India","h1_yellow":"for Measurable Business Growth","hero_subtitle":"One punchy sentence positioning Wildnet as top '+topic+' partner, mentioning ROI or measurable results","who_benefits_h2":"Who Sees Maximum Growth with Wildnet\'s Expert '+topic+'?","why_h2":"Why Do Brands Choose Wildnet\'s as Best '+topic+' Company?","why_sub":"One sentence on what sets Wildnet apart in '+topic+'","how_h2":"How Our '+topic+' Work | BRAND-FIRST APPROACH","process_label":"STREAMLINED WORKFLOW","process_h2":"Best '+topic+' Agency in India | Delivery Process","process_sub":"Wildnet\'s structured AI-powered workflow delivers qualified leads, improved performance, and measurable revenue growth through expert '+topic+'","reporting_label":"TRANSPARENT PARTNERSHIP","reporting_h2":"Wildnet\'s '+topic+' Campaigns | Reporting & Communication","reporting_sub":"Running '+topic+' campaigns without clear reporting creates uncertainty — Wildnet connects every activity to measurable KPIs","packages_label":"WILDNET '+topic.toUpperCase()+' | PACKAGES","packages_h2":"Wildnet\'s Flexible '+topic+' Engagement Models","packages_sub":"Different businesses require different strategies — Wildnet offers flexible engagement models for '+topic+'","cta_btn":"Book a 15-Min '+topic+' Call","faqs":[{"q":"What is '+topic+' and why does my business need it?","a":"Clear direct answer specific to '+topic+'"},{"q":"How long does it take to see results from '+topic+'?","a":"Realistic timeline answer"},{"q":"What makes Wildnet\'s '+topic+' different from competitors?","a":"Specific differentiators"},{"q":"How much does '+topic+' cost?","a":"Answer about flexible pricing without specific numbers"},{"q":"Do you provide '+topic+' for international businesses?","a":"Answer about global capabilities"}]}';
+
+      var aiResp=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:3000,messages:[{role:'user',content:aiPrompt}]})
+      });
+      var aiD=await aiResp.json();
+      if(aiD.error)throw new Error(aiD.error.message);
+      var aiRaw=(aiD.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').trim();
+
+      // Parse AI response with fallback defaults
+      var sv={
+        svc:topic,svc_short:topic.replace(/\s*(services?|in india|agency)\s*/gi,'').trim()||topic,
+        page_title:'Best '+topic+' in India | Wildnet Technologies',
+        meta_desc:topic+' by Wildnet Technologies — 19+ years experience, 350+ experts, Google Partner.',
+        h1_white:'The Best '+topic+' in India',h1_yellow:'for Measurable Business Growth',
+        hero_subtitle:'Partner with Wildnet Technologies for expert '+topic+' that drives qualified leads and sustainable revenue growth.',
+        who_benefits_h2:"Who Sees Maximum Growth with Wildnet's Expert "+topic+'?',
+        why_h2:"Why Do Brands Choose Wildnet's as Best "+topic+' Company?',
+        why_sub:'One sentence on what sets Wildnet apart.',
+        how_h2:'How Our '+topic+' Work | BRAND-FIRST APPROACH',
+        process_label:'STREAMLINED WORKFLOW',process_h2:'Best '+topic+' Agency in India | Delivery Process',
+        process_sub:"Wildnet's structured AI-powered workflow delivers qualified leads, higher rankings, and measurable revenue growth.",
+        reporting_label:'TRANSPARENT PARTNERSHIP',
+        reporting_h2:"Wildnet's "+topic+' Campaigns | Reporting & Communication',
+        reporting_sub:'Running '+topic+' campaigns without clear reporting creates uncertainty — Wildnet connects every activity to measurable KPIs.',
+        packages_label:'WILDNET '+topic.toUpperCase()+' | PACKAGES',
+        packages_h2:"Wildnet's Flexible "+topic+' Engagement Models',
+        packages_sub:'Different businesses require different strategies — Wildnet offers flexible engagement models.',
+        cta_btn:'Book a 15-Min '+topic+' Call',faqs:[]
+      };
+      try{
+        var j1=aiRaw.indexOf('{'),j2=aiRaw.lastIndexOf('}');
+        if(j1>=0&&j2>j1) Object.assign(sv,JSON.parse(aiRaw.slice(j1,j2+1)));
+      }catch(pe){ clog('\u26a0 JSON parse warning — using fallback content','#f59e0b'); }
+      clog('\u2713 Content ready','#22c55e');
+
+      // STEP 3: Clone template and inject new content
+      clog('\u23f3 Cloning template and injecting content…','#a78bfa');
+      var cloned=templateRaw;
+
+      // 3a) Regenerate all UAGB block_ids (avoids CSS conflicts between pages)
+      function newId(){ var id=''; for(var i=0;i<8;i++) id+='0123456789abcdef'[Math.floor(Math.random()*16)]; return id; }
+      cloned=cloned.replace(/"block_id":"[a-f0-9]{8}"/g,function(){ return '"block_id":"'+newId()+'"'; });
+      cloned=cloned.replace(/uagb-block-[a-f0-9]{8}/g,function(){ return 'uagb-block-'+newId(); });
+
+      // 3b) Replace the hero H2 (first uagb-heading-text h2) with new H1
+      var heroH2Replaced=false;
+      cloned=cloned.replace(/<h2 class="uagb-heading-text">([\s\S]*?)<\/h2>/,function(m){
+        if(heroH2Replaced) return m;
+        heroH2Replaced=true;
+        return '<h2 class="uagb-heading-text"><strong>'+esc(sv.h1_white)+'</strong> <mark style="background-color:rgba(0, 0, 0, 0);color:#FCA605" class="has-inline-color">'+esc(sv.h1_yellow)+'</mark></h2>';
+      });
+
+      // 3c) Replace first hero subtitle <p class="uagb-heading-text">
+      var heroSubReplaced=false;
+      cloned=cloned.replace(/<p class="uagb-heading-text">([\s\S]*?)<\/p>/,function(m){
+        if(heroSubReplaced) return m;
+        heroSubReplaced=true;
+        return '<p class="uagb-heading-text">'+esc(sv.hero_subtitle)+'</p>';
+      });
+
+      // 3d) Replace specific section headings (H4 labels, H2 titles, H3 subtitles)
+      var repMap=[
+        // Process section
+        [' STREAMLINED WORKFLOW',sv.process_label||'STREAMLINED WORKFLOW'],
+        ['STREAMLINED WORKFLOW',sv.process_label||'STREAMLINED WORKFLOW'],
+        // Reporting section
+        ['TRANSPARENT  PARTNERSHIP',sv.reporting_label],
+        ['TRANSPARENT PARTNERSHIP',sv.reporting_label],
+        // Packages section
+        ["OUR SEO COMPANY IN INDIA | PACKAGES",sv.packages_label],
+        // H2 titles
+        ["Best SEO Services Agency in India | Delivery Process",sv.process_h2],
+        ["Wildnet's SEO Campaigns | Reporting & Communication",sv.reporting_h2],
+        ["Wildnet's Flexible SEO Engagement Models",sv.packages_h2],
+        ["Wildnet's Flexible SEO",sv.packages_h2.split('|')[0].trim()],
+        // CTA button
+        ['Book a 15-Min SEO Call',sv.cta_btn],
+        // Internal links
+        ['best SEO Agency in Delhi','best '+sv.svc+' agency in India'],
+        ['best seo agency in delhi','best '+sv.svc.toLowerCase()+' agency in India'],
+      ];
+      repMap.forEach(function(r){
+        if(r[1]) cloned=cloned.split(r[0]).join(r[1]);
+      });
+
+      // 3e) Broad "SEO Services" / "SEO" replacement (outside URLs/attributes)
+      var svcShort=sv.svc_short||sv.svc;
+      // Replace compound phrases first
+      ['SEO Services Agency','SEO Services Company','SEO services agency','SEO services company','SEO Service Agency'].forEach(function(p){
+        cloned=cloned.split(p).join(sv.svc+' Agency');
+      });
+      ['Best SEO Services in India','best seo services in india'].forEach(function(p){
+        cloned=cloned.split(p).join('Best '+sv.svc+' in India');
+      });
+      // Replace "SEO Services" → topic
+      cloned=cloned.split('SEO Services').join(sv.svc);
+      cloned=cloned.split('SEO services').join(sv.svc.toLowerCase());
+      // Replace standalone "SEO" in heading text (not in href/src)
+      cloned=cloned.replace(/>([^<]*)\bSEO\b([^<]*)</g,function(m,pre,post){
+        return '>'+pre+svcShort+post+'<';
+      });
+
+      // 3f) Fix any broken Yoast links
+      cloned=cloned.replace(/href="[^"]*\/ai-seo-services[^"]*"/gi,'href="https://www.wildnettechnologies.com/"');
+      cloned=cloned.replace(/href="[^"]*\/seo-services[^"]*"/gi,'href="https://www.wildnettechnologies.com/"');
+
+      // 3g) Append FAQ section at the end
+      if(sv.faqs&&sv.faqs.length){
+        var faqHtml='\n<!-- wp:uagb/container {"block_id":"'+newId()+'","backgroundType":"color","backgroundColor":"#f8f8f8","topPaddingDesktop":50,"bottomPaddingDesktop":50,"paddingLink":false,"variationSelected":true,"isBlockRootParent":true} -->\n<div class="wp-block-uagb-container uagb-block-'+newId()+' alignfull uagb-is-root-container"><div class="uagb-container-inner-blocks-wrap">';
+        faqHtml+='<!-- wp:uagb/advanced-heading {"block_id":"'+newId()+'","classMigrate":true,"headingDescToggle":false,"headingAlign":"center","headingColor":"#283339","headFontFamily":"Poppins","headFontWeight":"700","headFontSize":36,"headLoadGoogleFonts":true,"blockTopPadding":0,"blockBottomPadding":20} -->\n<div class="wp-block-uagb-advanced-heading uagb-block-'+newId()+'"><h2 class="uagb-heading-text">Frequently Asked <mark style="background-color:rgba(0, 0, 0, 0);color:#FCA605" class="has-inline-color">Questions</mark></h2></div>\n<!-- /wp:uagb/advanced-heading -->\n';
+        sv.faqs.forEach(function(f){
+          var bid=newId();
+          faqHtml+='<!-- wp:uagb/advanced-heading {"block_id":"'+bid+'","classMigrate":true,"headingDescToggle":false,"headingColor":"#283339","headingTag":"h3","headFontFamily":"Poppins","headFontWeight":"600","headFontSize":18,"headLoadGoogleFonts":true,"blockTopPadding":15,"blockBottomPadding":5} -->\n<div class="wp-block-uagb-advanced-heading uagb-block-'+bid+'"><h3 class="uagb-heading-text">'+esc(f.q)+'</h3></div>\n<!-- /wp:uagb/advanced-heading -->\n';
+          faqHtml+='<!-- wp:paragraph --><p>'+esc(f.a)+'</p><!-- /wp:paragraph -->\n';
+        });
+        faqHtml+='</div></div>\n<!-- /wp:uagb/container -->';
+        cloned+=faqHtml;
+      }
+
+      var finalContent=cloned;
+      var finalTitle=sv.page_title;
+      var metaDesc=sv.meta_desc||'';
+      clog('\u2713 Template updated with new '+topic+' content','#22c55e');
+
+      // STEP 4: Publish to WordPress
+      clog('\u23f3 Publishing to WordPress…');
+      var pubBody={title:finalTitle,content:finalContent,status:postStatus,slug:finalSlug};
+      if(parentPageId) pubBody.parent=parseInt(parentPageId);
+      if(pageTemplate) pubBody.template=pageTemplate;
+      if(metaDesc){
+        pubBody.meta={};
+        pubBody.meta._yoast_wpseo_metadesc=metaDesc;
+        pubBody.meta._yoast_wpseo_title=finalTitle;
+      }
+      var pubResp=await fetch(wpBase+'/pages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:auth},
+        body:JSON.stringify(pubBody)
+      });
+      var pubResult=await pubResp.json();
+      if(!pubResult.id) throw new Error(pubResult.message||JSON.stringify(pubResult).substring(0,200));
+
+      // STEP 5: Force slug patch
+      try{
+        var sp=await fetch(wpBase+'/pages/'+pubResult.id,{
+          method:'POST',
+          headers:{'Content-Type':'application/json',Authorization:auth},
+          body:JSON.stringify({slug:finalSlug,status:postStatus})
+        });
+        var spr=await sp.json();
+        if(spr.link) pubResult.link=spr.link;
+      }catch(e){}
+
+      clog('\uD83C\uDF89 Service page published! ID: '+pubResult.id,'#22c55e');
+      clog('\u2139\uFE0F Design matches your SEO services page exactly — all UAGB blocks preserved with new content.','#a78bfa');
+      if(postStatus==='draft') clog('\uD83D\uDCDD Draft saved — go to WP Admin \u2192 Pages to review.','#a78bfa');
+      else clog('\u2139\uFE0F If URL shows ?page_id= — go to Settings \u2192 Permalinks \u2192 Save Changes.','#f59e0b');
+
+      var lnk=document.createElement('a');
+      lnk.href=pubResult.link||'https://www.wildnettechnologies.com/?page_id='+pubResult.id;
+      lnk.target='_blank';
+      lnk.style.cssText='display:inline-block;margin-top:8px;background:#22c55e;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none';
+      lnk.textContent=postStatus==='publish'?'\uD83C\uDF10 View Live Page \u2192':'\uD83D\uDCDD View Draft \u2192';
+      logDiv.appendChild(lnk);
+
+      showToast(postStatus==='publish'?'\u2705 Service page published!':'\u2705 Draft saved!');
+      btn.textContent='\u2746 Create Another';btn.disabled=false;
+      btn.onclick=function(){
+        document.getElementById('newPostTopic').value='';
+        document.getElementById('newPostKeyword').value='';
+        document.getElementById('newPostSlug').value='';
+        logDiv.innerHTML='';logDiv.style.display='none';
+        btn.textContent='\u2746 Write & Publish Service Page';btn.onclick=runCreatePost;
+      };
+      return; // done for service pages — skip blog flow below
+    }
+
+
+    // ── BLOG POST flow (unchanged) ────────────────────────────────────────────────
     // STEP 2: Write full SEO content
-    clog('⏳ AI writing full SEO content (800-1500 words)…');
+    clog('⏳ AI writing full SEO blog content (1000-1500 words)…');
     var blogInstructions='Write a comprehensive SEO blog post (1000-1500 words). Include: engaging intro with keyword, 5-7 H2 sections covering all aspects, bullet points, a FAQ section at end with 5 questions and answers.';
     var serviceInstructions='Write a service page EXACTLY matching Wildnet Technologies existing service page structure. Use ONLY h2 h3 p ul li ol strong tags. Follow this EXACT structure: '+
 'SECTION 1: <h1>[Best/Top] [Service] in India | Wildnet Technologies</h1><p>One powerful sentence about the service with main keyword. Organic search is highest-ROI channel — position Wildnet as the expert.</p>'+
@@ -1892,13 +2101,44 @@ async function runCreatePost(){
     });
     var pubResult=await pubResp.json();
     if(pubResult.id){
-      clog('🎉 '+(postStatus==='publish'?'Published live!':'Saved as draft!')+' ID: '+pubResult.id,'#22c55e');
+      clog('✓ Created — ID: '+pubResult.id+' | Fixing permalink…','#22c55e');
+
+      // ── SLUG FIX: WordPress sometimes ignores slug on first create ──
+      // Force-patch the slug immediately after creation so permalink is clean
+      try{
+        var patchResp=await fetch(wpBase+'/'+postType+'/'+pubResult.id,{
+          method:'POST',
+          headers:{'Content-Type':'application/json',Authorization:auth},
+          body:JSON.stringify({slug:finalSlug,status:postStatus})
+        });
+        var patchResult=await patchResp.json();
+        // Use the patched link if available — it will have the clean URL
+        if(patchResult.link&&!patchResult.link.includes('page_id')){
+          pubResult.link=patchResult.link;
+          clog('✓ Permalink set: '+patchResult.link,'#22c55e');
+        } else if(patchResult.link){
+          // Still has ?page_id — means permalinks need flushing in WP admin
+          pubResult.link=patchResult.link;
+          clog('⚠ Permalink still uses ?page_id — go to WP Admin → Settings → Permalinks → Save to flush rewrite rules','#f59e0b');
+        }
+      }catch(pe){
+        clog('⚠ Slug patch failed: '+pe.message+' — page is published but URL may use ?page_id','#f59e0b');
+      }
+
+      clog('🎉 '+(postStatus==='publish'?'Published live!':'Saved as draft!'),'#22c55e');
       var link=document.createElement('a');
       link.href=pubResult.link||'#';
       link.target='_blank';
       link.style.cssText='display:inline-block;margin-top:8px;background:#22c55e;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none';
       link.textContent=postStatus==='publish'?'🌐 View Live Page →':'📝 View Draft →';
       logDiv.appendChild(link);
+
+      // Show the clean slug for reference even if link has ?page_id
+      var slugNote=document.createElement('div');
+      slugNote.style.cssText='margin-top:6px;font-size:10px;color:var(--muted)';
+      slugNote.textContent='Expected URL: wildnettechnologies.com/'+finalSlug+'/';
+      logDiv.appendChild(slugNote);
+
       showToast(postStatus==='publish'?'✅ New post published!':'✅ Draft saved!');
       btn.textContent='✦ Create Another';
       btn.disabled=false;
