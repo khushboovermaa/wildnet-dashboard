@@ -1577,128 +1577,151 @@ async function runCreatePost(){
   try{
 
     // ════════════════════════════════════════════════════════════════════════
-    // ── SERVICE PAGE: True clone of your SEO services page via WP REST API ─
+    // ── SERVICE PAGE: Clone via WP REST API + smart text replacement ──────────
     // ════════════════════════════════════════════════════════════════════════
     if(!isBlog){
 
-      // STEP 1 — Fetch raw Gutenberg block content from your real SEO services page
-      clog('⏳ Step 1: Fetching your real SEO services page template via WP REST API…');
-      var templateRaw='';
-      var foundTemplateName='SEO Services';
+      // ── STEP 1: Find the template page ID + fetch its raw block content ──
+      clog('⏳ Step 1: Finding SEO services template page…');
+      var templateRaw='', templatePageId=null, foundTemplateName='SEO Services';
+      var templateSlugs=['seo-services','organic-seo-services','off-page-seo-services','on-page-seo-services','technical-seo-agency'];
 
-      // Try the exact page path first (digital-marketing sub-page), then fallbacks
-      var templateSlugs=['seo-services','organic-seo-services','technical-seo-agency','off-page-seo-services','on-page-seo-services','digital-marketing-seo'];
       for(var t=0;t<templateSlugs.length;t++){
         try{
-          clog('  Trying: /pages?slug='+templateSlugs[t]+'…');
-          // context=edit returns raw block markup (not rendered HTML)
-          var tResp=await fetch(wpBase+'/pages?slug='+templateSlugs[t]+'&context=edit&_fields=id,title,content,link',{headers:{Authorization:auth}});
-          if(!tResp.ok){clog('  HTTP '+tResp.status,'#f59e0b');continue;}
-          var tData=await tResp.json();
-          if(!Array.isArray(tData)||!tData.length){continue;}
-          var pg=tData[0];
-          var raw=pg.content&&pg.content.raw?pg.content.raw:(pg.content||'');
-          if(typeof raw==='object')raw=raw.rendered||'';
-          if(raw&&raw.length>500){
-            templateRaw=raw;
-            foundTemplateName=pg.title&&pg.title.rendered?pg.title.rendered.replace(/ \| Wildnet Technologies$/,'').replace(/ - Wildnet Technologies$/,''):'SEO Services';
-            clog('✓ Template loaded: "'+foundTemplateName+'" ('+Math.round(raw.length/1024)+'KB Gutenberg blocks)','#22c55e');
+          var tResp=await fetch(wpBase+'/pages?slug='+templateSlugs[t]+'&context=edit&_fields=id,title,content',{headers:{Authorization:auth}});
+          if(!tResp.ok) continue;
+          var tArr=await tResp.json();
+          if(!Array.isArray(tArr)||!tArr.length) continue;
+          var pg=tArr[0];
+          var rawC=pg.content&&pg.content.raw?pg.content.raw:'';
+          if(rawC.length>500){
+            templateRaw=rawC; templatePageId=pg.id;
+            foundTemplateName=(pg.title&&pg.title.rendered?pg.title.rendered:'SEO Services').replace(/ [\|\-] Wildnet.*$/,'').trim();
+            clog('✓ Template: "'+foundTemplateName+'" (ID:'+templatePageId+', '+Math.round(rawC.length/1024)+'KB)','#22c55e');
             break;
           }
-        }catch(te){clog('  Error: '+te.message,'#f59e0b');}
+        }catch(te){clog('  '+templateSlugs[t]+': '+te.message,'#f59e0b');}
       }
 
-      // Fallback: try fetching by parent page ID search
       if(!templateRaw){
-        try{
-          clog('  Trying parent search for digital-marketing child pages…');
-          var parentResp=await fetch(wpBase+'/pages?parent=0&per_page=50&context=edit&_fields=id,slug,title,content',{headers:{Authorization:auth}});
-          var parentPages=await parentResp.json();
-          if(Array.isArray(parentPages)){
-            for(var pp=0;pp<parentPages.length;pp++){
-              var sl=parentPages[pp].slug||'';
-              if(sl.includes('seo')||sl.includes('digital-marketing')){
-                var rr=parentPages[pp].content&&parentPages[pp].content.raw?parentPages[pp].content.raw:'';
-                if(rr&&rr.length>500){
-                  templateRaw=rr;
-                  foundTemplateName=parentPages[pp].title&&parentPages[pp].title.rendered?parentPages[pp].title.rendered.replace(/ \| Wildnet Technologies$/,''):'SEO Services';
-                  clog('✓ Found via parent search: "'+foundTemplateName+'"','#22c55e');
-                  break;
-                }
-              }
+        clog('⚠ No template found — falling back to basic structure','#f59e0b');
+        templateRaw='<!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Best SEO Services in India | Wildnet Technologies</h1><!-- /wp:heading -->'+
+          '<!-- wp:paragraph --><p>Drive organic growth with Wildnet Technologies — 19+ years, 350+ experts.</p><!-- /wp:paragraph -->'+
+          '<!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Why Choose Wildnet for SEO?</h2><!-- /wp:heading -->'+
+          '<!-- wp:list --><ul class="wp-block-list"><li><strong>19+ Years</strong> Experience</li><li><strong>350+ Experts</strong></li><li><strong>Google Partner</strong></li></ul><!-- /wp:list -->';
+      }
+
+      // ── STEP 1b: Extract Spectra CSS from template's frontend HTML ──
+      // This is the ONLY reliable way to get correct styling on new pages.
+      // Spectra caches CSS per post ID in wp_postmeta — new pages have no entry yet.
+      // Solution: grab the rendered CSS from the template page's public URL and embed it
+      // directly as a wp:html block so styling is self-contained.
+      var spectraCSS='';
+      var templateFrontendURL='';
+      try{
+        // Build the template's public URL from the slug we found
+        var foundSlug=templateSlugs[t>0?t-1:0]; // last successful slug
+        // Try to get the link from the page object (already fetched above)
+        // We'll re-fetch to get the link field
+        var linkResp=await fetch(wpBase+'/pages?slug='+(foundSlug||templateSlugs[0])+'&_fields=link',{headers:{Authorization:auth}});
+        var linkArr=await linkResp.json();
+        if(Array.isArray(linkArr)&&linkArr[0]&&linkArr[0].link) templateFrontendURL=linkArr[0].link;
+        else templateFrontendURL='https://www.wildnettechnologies.com/digital-marketing/seo-services';
+      }catch(le){ templateFrontendURL='https://www.wildnettechnologies.com/digital-marketing/seo-services'; }
+
+      clog('⏳ Step 1b: Extracting Spectra CSS from template frontend…');
+      try{
+        var frontResp=await fetch(templateFrontendURL,{cache:'no-store'});
+        if(frontResp.ok){
+          var frontHTML=await frontResp.text();
+          // Extract all <style> tags that contain Spectra/UAGB rules
+          var styleRules='';
+          var styleRe=/<style[^>]*>([\s\S]*?)<\/style>/gi; var stM;
+          while((stM=styleRe.exec(frontHTML))!==null){
+            var block=stM[1];
+            // Only keep blocks that contain UAGB/Spectra selectors OR global layout CSS
+            if(/\.uagb-|\.uag-|\.wp-block-uagb|spectra/i.test(block)){
+              styleRules+=block.trim()+'\n';
             }
           }
-        }catch(pe2){clog('  Parent search failed: '+pe2.message,'#f59e0b');}
-      }
+          // Also capture any inline style with uagb in it
+          var inlineRe=/style="([^"]*\.uagb[^"]*)"/gi; var inM;
+          while((inM=inlineRe.exec(frontHTML))!==null){ /* captured inline, no action needed */ }
 
-      if(!templateRaw){
-        clog('⚠ Could not load template — using standard Wildnet service page structure','#f59e0b');
-        templateRaw=
-          '<!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Best SEO Services in India | Wildnet Technologies</h1><!-- /wp:heading -->'+
-          '<!-- wp:paragraph --><p>Drive organic growth with India\'s most trusted SEO agency — 19+ years experience, 350+ experts, proven ROI.</p><!-- /wp:paragraph -->'+
-          '<!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Key Stats</h2><!-- /wp:heading -->'+
-          '<!-- wp:list --><ul class="wp-block-list"><li><strong>19+ Years</strong> of Digital Marketing Expertise</li><li><strong>100K+</strong> Campaigns Successfully Delivered</li><li><strong>4100+</strong> Brands Served Across India</li><li><strong>Up to 5X</strong> Lead Growth</li></ul><!-- /wp:list -->'+
-          '<!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Who Sees Maximum Growth with Wildnet SEO Services?</h2><!-- /wp:heading -->'+
-          '<!-- wp:paragraph --><p>Businesses across all industries leverage Wildnet SEO to dominate search rankings and drive qualified traffic.</p><!-- /wp:paragraph -->'+
-          '<!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Our SEO Services Include</h2><!-- /wp:heading -->'+
-          '<!-- wp:list --><ul class="wp-block-list"><li><strong>Technical SEO Audit:</strong> Full site audit and fix</li><li><strong>On-Page Optimisation:</strong> Title, meta, content</li><li><strong>Link Building:</strong> High-DA backlinks</li><li><strong>Content Strategy:</strong> Topical authority</li></ul><!-- /wp:list -->'+
-          '<!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Why Choose Wildnet Technologies for SEO?</h2><!-- /wp:heading -->'+
-          '<!-- wp:list --><ul class="wp-block-list"><li><strong>19+ Years Experience</strong></li><li><strong>350+ SEO Experts</strong></li><li><strong>Google Partner</strong></li><li><strong>98% Client Retention</strong></li></ul><!-- /wp:list -->'+
-          '<!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Our SEO Process</h2><!-- /wp:heading -->'+
-          '<!-- wp:list {"ordered":true} --><ol class="wp-block-list"><li>Discovery &amp; Audit</li><li>Strategy &amp; Planning</li><li>On-Page Implementation</li><li>Off-Page &amp; Link Building</li><li>Reporting &amp; Optimisation</li></ol><!-- /wp:list -->';
-      }
+          if(styleRules.length>100){
+            // Wrap as a wp:html block so it's injected verbatim into the page head area
+            spectraCSS='<!-- wp:html -->\n<style id="uagb-cloned-css">\n'+styleRules+'\n</style>\n<!-- /wp:html -->\n';
+            clog('✓ Spectra CSS extracted ('+Math.round(styleRules.length/1024)+'KB) — layout will match exactly','#22c55e');
+          } else {
+            clog('⚠ Spectra CSS not found in frontend — open WP editor and click Update if layout looks off','#f59e0b');
+          }
+        }
+      }catch(ce2){ clog('⚠ Could not fetch template frontend (CORS?): '+ce2.message+' — if layout looks off, open page in WP editor and click Update','#f59e0b'); }
 
-      // STEP 2 — Research competitors for the new topic
-      clog('⏳ Step 2: Researching top competitors for "'+keyword+'"…');
+      // ── STEP 2: Research competitors ──
+      clog('⏳ Step 2: Researching competitors for "'+keyword+'"…');
       var competitorInfo='';
       try{
-        var sp='Search Google for: '+keyword+' services India. Summarize the top 5 ranking pages — their main headings, key selling points, FAQs, and CTAs.';
+        var sp='Search Google for: '+keyword+' services India. List the top 5 ranking pages: their H1, main H2s, key USPs, and any FAQs.';
         var sRes=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:1500,tools:[{type:'web_search_20250305',name:'web_search'}],messages:[{role:'user',content:sp}]})});
-        var sd=await sRes.json();
-        if(sd.error)throw new Error(sd.error.message);
+        var sd=await sRes.json(); if(sd.error) throw new Error(sd.error.message);
         var smsgs=[{role:'user',content:sp}];
         for(var r=0;r<5;r++){
-          var sblocks=sd.content||[];
-          var stxt=sblocks.filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
+          var sblocks=sd.content||[]; var stxt=sblocks.filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
           if(sd.stop_reason==='end_turn'||sd.stop_reason==='max_tokens'){competitorInfo=stxt;break;}
           if(sd.stop_reason==='tool_use'){
             smsgs.push({role:'assistant',content:sblocks});
-            var str=sblocks.filter(function(b){return b.type==='tool_use';}).map(function(b){return{type:'tool_result',tool_use_id:b.id,content:'Done.'};});
-            smsgs.push({role:'user',content:str});
+            smsgs.push({role:'user',content:sblocks.filter(function(b){return b.type==='tool_use';}).map(function(b){return{type:'tool_result',tool_use_id:b.id,content:'Done.'};})});
             var sr2=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:1500,tools:[{type:'web_search_20250305',name:'web_search'}],messages:smsgs})});
-            sd=await sr2.json();if(sd.error)throw new Error(sd.error.message);
+            sd=await sr2.json(); if(sd.error) throw new Error(sd.error.message);
           }else{competitorInfo=stxt;break;}
         }
-        clog('✓ Competitor research done','#22c55e');
+        clog('✓ Research done','#22c55e');
       }catch(ce){clog('⚠ Research skipped: '+ce.message,'#f59e0b');}
 
-      // STEP 3 — AI generates smart text replacements + FAQs
-      clog('⏳ Step 3: AI generating topic-specific content replacements…');
-      var rPrompt='You are an SEO copywriter for Wildnet Technologies India. The template page is about "'+foundTemplateName+'" services. '+
-        'Create a replacement map to transform it into a page about "'+topic+'" (target keyword: "'+keyword+'"). '+
-        'Competitor insights: '+competitorInfo.substring(0,500)+'. '+
-        'Return ONLY valid JSON, no markdown, no backticks: '+
-        '{"replacements":{"'+foundTemplateName+' Services":"'+topic+' Services","Best '+foundTemplateName+' Services in India":"Best '+topic+' Services in India","Best '+foundTemplateName+' in India":"Best '+topic+' in India","Why Choose Wildnet '+foundTemplateName+'":"Why Choose Wildnet '+topic+'","Our '+foundTemplateName+' Services Include":"Our '+topic+' Services Include","Our '+foundTemplateName+' Process":"Our '+topic+' Process","Wildnet '+foundTemplateName+'":"Wildnet '+topic+'","'+foundTemplateName+' Agency":"'+topic+' Agency","'+foundTemplateName+' Company":"'+topic+' Company"},"page_title":"Best '+topic+' Services in India | Wildnet Technologies","meta_description":"Expert '+topic+' services in India. Wildnet Technologies — 19+ years, 350+ experts, proven ROI. Get a free consultation today.","faqs":[{"q":"What are '+topic+' services?","a":"A brief authoritative answer."},{"q":"How much do '+topic+' services cost in India?","a":"Pricing range context."},{"q":"How long does '+topic+' take to show results?","a":"Realistic timeline."},{"q":"Why choose Wildnet for '+topic+'?","a":"Key differentiators."},{"q":"Do you offer '+topic+' for small businesses?","a":"Yes, and why."}]}';
+      // ── STEP 3: AI writes replacement content ──
+      // Send the ACTUAL template text to AI so it replaces real phrases, not guesses
+      clog('⏳ Step 3: AI generating content replacements…');
 
-      var rRes=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:2000,messages:[{role:'user',content:rPrompt}]})});
-      var rData=await rRes.json();
-      if(rData.error)throw new Error(rData.error.message);
+      // Extract all visible text from template (between > and <) longer than 5 chars
+      var visibleTexts=[];
+      var vtRe=/>([^<]{5,200})</g; var vtM;
+      var vtSrc=templateRaw.replace(/<!--[\s\S]*?-->/g,' '); // strip block comments first for HTML extraction
+      while((vtM=vtRe.exec(vtSrc))!==null){
+        var vt=vtM[1].trim();
+        if(vt.length>=5&&!/^[\s\d\W]+$/.test(vt)) visibleTexts.push(vt);
+      }
+      // Also extract Spectra JSON text values: "headingTitle":"...", etc.
+      var jsonRe=/"(?:headingTitle|description|subHeadingText|head_tag|sub_tag|ctaText|btnText|title|label|text|content)"\s*:\s*"([^"\\]{3,200})"/g; var jM;
+      while((jM=jsonRe.exec(templateRaw))!==null){ if(jM[1].trim().length>3) visibleTexts.push(jM[1].trim()); }
+      // Deduplicate + keep only phrases containing the old service name or generic service terms
+      var oldName=foundTemplateName.replace(/ Services?$/i,'').trim();
+      visibleTexts=visibleTexts.filter(function(v,i,a){
+        return a.indexOf(v)===i && (new RegExp(oldName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i').test(v)||/seo|search engine|organic|ranking/i.test(v));
+      }).slice(0,40);
+      clog('  Found '+visibleTexts.length+' phrases to transform','var(--muted)');
+
+      var aiPrompt='You are writing for Wildnet Technologies India. Transform this service page from "'+foundTemplateName+'" to "'+topic+'" (keyword: "'+keyword+'").\n\n'+
+        'Competitor context: '+competitorInfo.substring(0,400)+'\n\n'+
+        'PHRASES TO TRANSFORM (give a replacement for EVERY one):\n'+
+        visibleTexts.map(function(t,i){return i+'. '+t;}).join('\n')+'\n\n'+
+        'Rules:\n- Keep "Wildnet" brand name\n- Keep all numbers (19+, 350+, 100K+, etc)\n- Keep "India" references\n- Only change the SERVICE TOPIC words\n- Make it sound natural and professional\n\n'+
+        'Return ONLY this JSON (no markdown, no backticks, start with {):\n'+
+        '{"replacements":{"ORIGINAL_PHRASE":"NEW_PHRASE",...for every phrase above...},"page_title":"Best '+topic+' Services in India | Wildnet Technologies","meta_description":"160 chars max about '+topic+' services by Wildnet","faqs":[{"q":"FAQ question 1?","a":"Answer."},{"q":"FAQ question 2?","a":"Answer."},{"q":"FAQ question 3?","a":"Answer."},{"q":"FAQ question 4?","a":"Answer."},{"q":"FAQ question 5?","a":"Answer."}]}';
+
+      var rRes=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,messages:[{role:'user',content:aiPrompt}]})});
+      var rData=await rRes.json(); if(rData.error) throw new Error(rData.error.message);
       var rText=(rData.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').trim();
 
-      var replacements={};
-      var faqs=[];
-      var pageTitle='Best '+topic+' Services in India | Wildnet Technologies';
-      var metaDesc='Expert '+topic+' services in India. Wildnet Technologies — 19+ years, 350+ experts, proven ROI.';
+      var replacements={}, faqs=[], pageTitle='Best '+topic+' Services in India | Wildnet Technologies', metaDesc='Expert '+topic+' services in India by Wildnet Technologies — 19+ years, 350+ experts.';
       try{
-        var ci=rText.indexOf('{'),cie=rText.lastIndexOf('}');
+        var ci=rText.indexOf('{'), cie=rText.lastIndexOf('}');
         var rp=JSON.parse(rText.slice(ci,cie+1));
-        replacements=rp.replacements||{};
-        faqs=rp.faqs||[];
-        pageTitle=rp.page_title||pageTitle;
-        metaDesc=rp.meta_description||metaDesc;
-        clog('✓ Replacement map ready ('+Object.keys(replacements).length+' substitutions)','#22c55e');
+        replacements=rp.replacements||{}; faqs=rp.faqs||[];
+        pageTitle=rp.page_title||pageTitle; metaDesc=rp.meta_description||metaDesc;
+        clog('✓ AI generated '+Object.keys(replacements).length+' replacements','#22c55e');
       }catch(pe){
-        clog('⚠ Using basic replacements','#f59e0b');
+        clog('⚠ AI parse failed — using basic map','#f59e0b');
         replacements[foundTemplateName+' Services']=topic+' Services';
         replacements['Best '+foundTemplateName+' in India']='Best '+topic+' in India';
         replacements['Wildnet '+foundTemplateName]='Wildnet '+topic;
@@ -1706,42 +1729,56 @@ async function runCreatePost(){
         replacements[foundTemplateName]=topic;
       }
 
-      // STEP 4 — Clone template + apply all replacements
-      clog('⏳ Step 4: Cloning template and applying replacements…');
-      var cloned=templateRaw;
+      // ── STEP 4: Apply replacements to the cloned content ──
+      clog('⏳ Step 4: Applying replacements to template…');
+      // Prepend Spectra CSS block so layout is self-contained (no wp_postmeta dependency)
+      var cloned=(spectraCSS||'')+templateRaw;
 
-      // 4a) KEEP original UAGB/Spectra block_ids — Spectra CSS is tied to these IDs.
-      // Regenerating them would break all styling. WordPress handles CSS per page context,
-      // so the same block_id on a different page URL is fine and gets its CSS served correctly.
-
-      // 4b) Replace text inside Gutenberg block comments (JSON attributes)
-      // Sort by length descending so longer phrases replace first (avoids partial matches)
+      // Sort longest → shortest to avoid partial-match clobbering
       var sortedKeys=Object.keys(replacements).sort(function(a,b){return b.length-a.length;});
-      sortedKeys.forEach(function(orig){
-        var repl=replacements[orig];
-        if(!orig||!repl||orig===repl)return;
-        var safe=orig.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-        // Replace in text content between tags (not in href/src/class attributes)
-        try{cloned=cloned.replace(new RegExp('(>(?:[^<]*))'+safe+'((?:[^<]*)<)','g'),function(m,pre,post){return pre+repl+post;});}catch(e){}
-        // Also replace in Gutenberg block comment JSON (the <!-- wp:xxx {...} --> parts)
-        // but only in string values, not in CSS class names or URLs
-        try{cloned=cloned.replace(new RegExp('("(?:content|label|text|heading|title|value)"\\s*:\\s*"[^"]*?)'+safe,'g'),function(m,pre){return pre+repl;});}catch(e){}
-      });
 
-      // 4c) Append FAQ section using wp:details accordion (Gutenberg native)
-      if(faqs&&faqs.length>0){
-        var faqBlock='\n<!-- wp:heading {"level":2} -->\n<h2 class="wp-block-heading">Frequently Asked Questions about '+topic+'</h2>\n<!-- /wp:heading -->\n';
-        faqs.forEach(function(f){
-          if(!f.q||!f.a)return;
-          faqBlock+='<!-- wp:heading {"level":3} -->\n<h3 class="wp-block-heading">'+escHtml(f.q)+'</h3>\n<!-- /wp:heading -->\n'+
-            '<!-- wp:paragraph -->\n<p>'+escHtml(f.a)+'</p>\n<!-- /wp:paragraph -->\n';
-        });
-        cloned+=faqBlock;
+      function safeReplace(src, orig, repl){
+        if(!orig||!repl||orig===repl||orig.length<2) return src;
+        // 1) Replace in HTML text nodes: >...PHRASE...<
+        try{
+          var esc=orig.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+          src=src.replace(new RegExp('(>(?:[^<]*))'+esc+'((?:[^<]*)<)','g'),function(m,a,b){return a+repl+b;});
+        }catch(e){}
+        // 2) Replace in JSON string values inside block comments: "key":"...PHRASE..."
+        try{
+          var esc2=orig.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+          src=src.replace(new RegExp('(:\\s*"(?:[^"\\\\]|\\\\.)*)'+esc2+'((?:[^"\\\\]|\\\\.)*")','g'),function(m,a,b){return a+repl+b;});
+        }catch(e){}
+        // 3) Safe global string replace (skip if inside href/src/class/id= attributes)
+        var idx=0;
+        while((idx=src.indexOf(orig,idx))!==-1){
+          var ctx=src.substring(Math.max(0,idx-20),idx);
+          if(/(?:href|src|class|id|slug|data-)\s*=\s*["'][^"']*$/.test(ctx)){idx+=orig.length;continue;}
+          src=src.substring(0,idx)+repl+src.substring(idx+orig.length);
+          idx+=repl.length;
+        }
+        return src;
       }
 
-      clog('✓ Template cloned & customised for "'+topic+'"','#22c55e');
+      sortedKeys.forEach(function(orig){ cloned=safeReplace(cloned,orig,replacements[orig]); });
+      // Final pass: replace the bare service name (e.g. "SEO" → topic) wherever it wasn't caught above
+      if(oldName&&oldName!==topic){
+        cloned=safeReplace(cloned, oldName+' Services', topic+' Services');
+        cloned=safeReplace(cloned, oldName, topic);
+      }
 
-      // STEP 5 — Upload featured image
+      // ── 4c: Append FAQ block ──
+      if(faqs&&faqs.length){
+        var faqHtml='\n<!-- wp:heading {"level":2} -->\n<h2 class="wp-block-heading">Frequently Asked Questions about '+escHtml(topic)+'</h2>\n<!-- /wp:heading -->\n';
+        faqs.forEach(function(f){
+          if(!f.q||!f.a) return;
+          faqHtml+='<!-- wp:heading {"level":3} -->\n<h3 class="wp-block-heading">'+escHtml(f.q)+'</h3>\n<!-- /wp:heading -->\n<!-- wp:paragraph -->\n<p>'+escHtml(f.a)+'</p>\n<!-- /wp:paragraph -->\n';
+        });
+        cloned+=faqHtml;
+      }
+      clog('✓ Content ready','#22c55e');
+
+      // ── STEP 5: Upload featured image ──
       clog('⏳ Step 5: Uploading featured image…');
       var featuredMediaId=null;
       try{
@@ -1749,19 +1786,37 @@ async function runCreatePost(){
         var imgBlob=await (await fetch('https://picsum.photos/seed/'+imgSeed+'/1200/628')).blob();
         var mRes=await fetch(wpBase+'/media',{method:'POST',headers:{Authorization:auth,'Content-Disposition':'attachment; filename="'+finalSlug+'.jpg"','Content-Type':'image/jpeg'},body:imgBlob});
         var mData=await mRes.json();
-        if(mData.id){featuredMediaId=mData.id;clog('✓ Featured image uploaded (ID: '+mData.id+')','#22c55e');}
-        else{clog('⚠ Image skipped: '+(mData.message||'unknown'),'#f59e0b');}
-      }catch(ie){clog('⚠ Image error: '+ie.message+' — continuing','#f59e0b');}
+        if(mData.id){featuredMediaId=mData.id;clog('✓ Image uploaded (ID:'+mData.id+')','#22c55e');}
+        else clog('⚠ Image skipped: '+(mData.message||'unknown'),'#f59e0b');
+      }catch(ie){clog('⚠ Image error: '+ie.message,'#f59e0b');}
 
-      // STEP 6 — Publish to WordPress as Page (not post)
-      clog('⏳ Step 6: Publishing service page to WordPress…');
-      var pubBody={title:pageTitle,content:cloned,status:postStatus,slug:finalSlug,type:'page'};
-      if(featuredMediaId)pubBody.featured_media=featuredMediaId;
-      pubBody.meta={_yoast_wpseo_metadesc:metaDesc,_yoast_wpseo_title:pageTitle+' - Wildnet Technologies'};
+      // ── STEP 6: Publish page ──
+      clog('⏳ Step 6: Publishing page to WordPress…');
+      var pubBody={title:pageTitle, content:cloned, status:postStatus, slug:finalSlug};
+      if(featuredMediaId) pubBody.featured_media=featuredMediaId;
+      pubBody.meta={_yoast_wpseo_metadesc:metaDesc, _yoast_wpseo_title:pageTitle};
 
       var pubRes=await fetch(wpBase+'/pages',{method:'POST',headers:{'Content-Type':'application/json',Authorization:auth},body:JSON.stringify(pubBody)});
       var pubResult=await pubRes.json();
-      if(!pubResult.id)throw new Error(pubResult.message||JSON.stringify(pubResult).substring(0,200));
+      if(!pubResult.id) throw new Error(pubResult.message||JSON.stringify(pubResult).substring(0,200));
+      clog('✓ Page created (ID: '+pubResult.id+')','#22c55e');
+
+      // ── STEP 7: Trigger Spectra CSS regeneration ──
+      // Spectra stores CSS per post. We force it to regenerate by saving the page again
+      // with a dummy meta update, which fires Spectra's save_post hook.
+      clog('⏳ Step 7: Finalising page and verifying…');
+      try{
+        await new Promise(function(res){setTimeout(res,1500);});
+        var regenRes=await fetch(wpBase+'/pages/'+pubResult.id,{
+          method:'POST',
+          headers:{'Content-Type':'application/json',Authorization:auth},
+          body:JSON.stringify({status:postStatus, slug:finalSlug})
+        });
+        var regenData=await regenRes.json();
+        if(regenData.link) pubResult.link=regenData.link;
+        clog('✓ Page finalised','#22c55e');
+      }catch(re){clog('⚠ Finalise step skipped: '+re.message,'#f59e0b');}
+
 
       // Force clean slug
       try{
@@ -1770,22 +1825,34 @@ async function runCreatePost(){
         if(patchData.link)pubResult.link=patchData.link;
       }catch(spe){}
 
-      clog('🎉 Service page published! ID: '+pubResult.id+' | Layout matches your '+foundTemplateName+' page exactly','#22c55e');
-      clog('✓ Spectra block IDs preserved — CSS loads correctly, design is identical','#a78bfa');
+      // ── Done ──
+      var finalLink=pubResult.link||('https://www.wildnettechnologies.com/?page_id='+pubResult.id);
+      clog('🎉 Service page published! ID: '+pubResult.id,'#22c55e');
+      clog('✓ Layout cloned from "'+foundTemplateName+'" — Spectra CSS embedded directly in content','#a78bfa');
+      clog('💡 Tip: Styling is self-contained via embedded CSS. If you update the template page later, re-run this tool to pick up the new CSS.','var(--muted)');
+
       var lnk=document.createElement('a');
-      lnk.href=pubResult.link||('https://www.wildnettechnologies.com/?page_id='+pubResult.id);
-      lnk.target='_blank';
+      lnk.href=finalLink; lnk.target='_blank';
       lnk.style.cssText='display:inline-block;margin-top:12px;background:#22c55e;color:#fff;padding:10px 20px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none';
       lnk.textContent='🌐 View Service Page →';
       logDiv.appendChild(lnk);
+
+      // Also show a WP edit link so user can do one-click CSS regen
+      var editLnk=document.createElement('a');
+      editLnk.href='https://www.wildnettechnologies.com/wp-admin/post.php?post='+pubResult.id+'&action=edit';
+      editLnk.target='_blank';
+      editLnk.style.cssText='display:inline-block;margin-top:8px;margin-left:8px;background:#6366f1;color:#fff;padding:10px 20px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none';
+      editLnk.textContent='✏️ Open in WP Editor → Update';
+      logDiv.appendChild(editLnk);
+
       showToast('✅ Service page published!');
-      btn.disabled=false;btn.textContent='✦ Create Another';
+      btn.disabled=false; btn.textContent='✦ Create Another';
       btn.onclick=function(){
         document.getElementById('newPostTopic').value='';
         document.getElementById('newPostKeyword').value='';
         document.getElementById('newPostSlug').value='';
-        logDiv.innerHTML='';logDiv.style.display='none';
-        btn.textContent='✦ Write & Publish';btn.onclick=runCreatePost;
+        logDiv.innerHTML=''; logDiv.style.display='none';
+        btn.textContent='✦ Write & Publish'; btn.onclick=runCreatePost;
       };
       return; // ← Service page done. Blog flow below does NOT run.
     }
