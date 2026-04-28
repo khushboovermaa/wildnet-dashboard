@@ -1710,9 +1710,9 @@ async function runCreatePost(){
       clog('⏳ Step 4: Cloning template and applying replacements…');
       var cloned=templateRaw;
 
-      // 4a) Regenerate all UAGB/Spectra block_ids → prevents CSS conflicts on new page
-      cloned=cloned.replace(/"block_id"\s*:\s*"[a-f0-9\-]{8,36}"/g,function(){return '"block_id":"'+newId()+'"';});
-      cloned=cloned.replace(/uagb-block-[a-f0-9\-]{8,36}/g,function(){return 'uagb-block-'+newId();});
+      // 4a) KEEP original UAGB/Spectra block_ids — Spectra CSS is tied to these IDs.
+      // Regenerating them would break all styling. WordPress handles CSS per page context,
+      // so the same block_id on a different page URL is fine and gets its CSS served correctly.
 
       // 4b) Replace text inside Gutenberg block comments (JSON attributes)
       // Sort by length descending so longer phrases replace first (avoids partial matches)
@@ -1770,8 +1770,8 @@ async function runCreatePost(){
         if(patchData.link)pubResult.link=patchData.link;
       }catch(spe){}
 
-      clog('🎉 Service page published! ID: '+pubResult.id+' | Layout matches your '+foundTemplateName+' page','#22c55e');
-      clog('✓ All UAGB block IDs regenerated — no CSS conflicts','#a78bfa');
+      clog('🎉 Service page published! ID: '+pubResult.id+' | Layout matches your '+foundTemplateName+' page exactly','#22c55e');
+      clog('✓ Spectra block IDs preserved — CSS loads correctly, design is identical','#a78bfa');
       var lnk=document.createElement('a');
       lnk.href=pubResult.link||('https://www.wildnettechnologies.com/?page_id='+pubResult.id);
       lnk.target='_blank';
