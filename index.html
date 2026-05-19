@@ -1888,15 +1888,16 @@ async function runCreatePost(){
     }
     clog('✓ Competitor research done','#22c55e');
 
-    // STEP 2: Write full SEO blog content
-    clog('⏳ AI writing full SEO blog post (1000-1500 words)…');
-    var blogInstructions='Write a comprehensive SEO blog post (1000-1500 words). Include: engaging intro with keyword, 5-7 H2 sections covering all aspects, bullet points, a FAQ section at end with 5 questions and answers.';
-    var writeMsg='You are an expert SEO content writer for Wildnet Technologies, an Indian digital marketing agency. TOPIC: '+topic+' | KEYWORD: '+keyword+' | COMPETITOR INSIGHTS: '+competitorInfo.substring(0,800)+' | '+blogInstructions+' Use ONLY these HTML tags: h2 h3 p ul li strong em. NO backslash-n in content. Output ONLY JSON (no markdown, start with { end with }): {"title":"optimized title","content":"<h2>heading</h2><p>text</p>","meta_description":"150 char description","changes_made":["point1","point2"]}';
+    // STEP 2: Write full SEO blog content with RAG context
+    clog('⏳ AI writing full SEO blog post with E-E-A-T framework (1000-1500 words)…');
+    var ragContext='You are an expert SEO content writer trained on Google\'s E-E-A-T framework and advanced content strategy. INSTRUCTIONS: (1) DATES: Always use current year '+getCurrentYear()+' in content. Never mention 2024 or outdated years. (2) TITLES: Create varied, compelling titles using different patterns: Question format "How to [task]: [outcome]", Listicle "[Number] Ways to [outcome]", Problem-solution "Why [problem] and How to Fix It", Case-study "Real Results: [outcome] in [timeframe]". Rotate patterns. (3) E-E-A-T SIGNALS: Include personal experience, original research, source attribution, author expertise indicators, trust-building language. (4) CONTENT: Aim for 800-1200 words with proper semantic structure (h2, h3, p, ul, li, strong, em). (5) KEYWORDS: Naturally place primary keyword in H1, first 100 words, subheadings, conclusion. (6) OUTPUT: Return ONLY valid JSON with keys: title, content, meta_description, changes_made. Content must be clean HTML - no markdown, no backslashes, no newlines inside strings.';
+    var blogInstructions='Write a comprehensive SEO blog post (1000-1500 words). Include: engaging intro with keyword, 5-7 H2 sections covering all aspects, bullet points, FAQ section with 5 questions. Follow E-E-A-T framework with original insights.';
+    var writeMsg=ragContext+' TOPIC: '+topic+' | KEYWORD: '+keyword+' | COMPETITOR INSIGHTS: '+competitorInfo.substring(0,800)+' | CURRENT DATE: '+getCurrentDate()+' | '+blogInstructions+' Use ONLY these HTML tags: h2 h3 p ul li strong em. NO backslash-n in content. Output ONLY JSON (no markdown, start with { end with }): {"title":"engaging title with keyword","content":"<h2>heading</h2><p>text</p>","meta_description":"150 char description","changes_made":["point1","point2"]}';
 
     var writeResp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,messages:[{role:'user',content:writeMsg}]})
+      body:JSON.stringify({model:'claude-opus-4-6',max_tokens:4000,messages:[{role:'user',content:writeMsg}]})
     });
     var wd=await writeResp.json();
     if(wd.error)throw new Error(wd.error.message);
@@ -1916,8 +1917,8 @@ async function runCreatePost(){
     var rawContent=parsed.content||'';
     if(!rawContent||rawContent.includes('"title"')||rawContent.includes('json {')){
       clog('⚠ Retrying with stricter prompt…','#f59e0b');
-      var retryMsg='Write a blog post about: '+topic+'. Keyword: '+keyword+'. IMPORTANT: Your response must be ONLY a valid JSON object starting with { and ending with }. Use these exact keys: title, content, meta_description, changes_made. The content value must be clean HTML using only h2 h3 p ul li strong tags. No backslashes. No newlines inside strings. No markdown.';
-      var retryResp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:4000,messages:[{role:'user',content:retryMsg}]})});
+      var retryMsg='Write a blog post about: '+topic+'. Keyword: '+keyword+'. Current year: '+getCurrentYear()+'. IMPORTANT: (1) Use current year '+getCurrentYear()+' only, never 2024. (2) Create an engaging, varied title (not "Complete Guide"). (3) Include E-E-A-T signals: expertise, authority, original insights, trustworthiness. (4) Response must be ONLY valid JSON object starting with { and ending with }. Use keys: title, content, meta_description, changes_made. (5) Content must be clean HTML using only h2 h3 p ul li strong em tags. No backslashes. No newlines inside strings. No markdown.';
+      var retryResp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-opus-4-6',max_tokens:4000,messages:[{role:'user',content:retryMsg}]})});
       var retryData=await retryResp.json();
       if(retryData.error)throw new Error(retryData.error.message);
       var retryText=(retryData.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').trim();
@@ -1977,6 +1978,8 @@ async function runCreatePost(){
   }
 }
 
+function getCurrentYear(){return new Date().getFullYear();}
+function getCurrentDate(){const now=new Date();const year=now.getFullYear();const month=String(now.getMonth()+1).padStart(2,'0');const day=String(now.getDate()).padStart(2,'0');return year+'-'+month+'-'+day;}
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 function setLoading(on,pct,msg){
